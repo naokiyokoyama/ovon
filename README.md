@@ -1,1 +1,2 @@
-# ovon
+# Open Vocabulary Object Navigation
+
