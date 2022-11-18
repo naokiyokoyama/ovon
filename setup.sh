@@ -1,4 +1,5 @@
 # Record of how the environment was set up
+pip install -e .  # install ovon as a package
 
 git clone git@github.com:vincentpierre/habitat-lab.git
 cd habitat-lab
