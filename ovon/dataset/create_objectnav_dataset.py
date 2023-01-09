@@ -36,7 +36,7 @@ font = {"size": 22}
 matplotlib.rc("font", **font)
 
 os.environ["MAGNUM_LOG"] = "quiet"
-# os.environ["HABITAT_SIM_LOG"] = "quiet"
+os.environ["HABITAT_SIM_LOG"] = "quiet"
 
 
 SCENES_ROOT = "./data/scene_datasets/hm3d"
@@ -53,7 +53,7 @@ OUTPUT_OBJ_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.2/{VERSION_ID}"
 PLOT_FOLDER = "data/hm3d_semantic_v0.2_objectnav_plots"
 OUTPUT_JSON_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.2/{VERSION_ID}"
 NUM_GPUS = len(GPUtil.getAvailable(limit=256))
-TASKS_PER_GPU = 1
+TASKS_PER_GPU = 12
 
 wordlist = GOAL_CATEGORIES
 
@@ -507,7 +507,7 @@ def read_dset(json_fname):
 
 
 def prepare_inputs(split):
-    scenes = [f"{SCENES_ROOT}/{scene}" for scene in HM3D_SCENES[split][:2]]
+    scenes = [f"{SCENES_ROOT}/{scene}" for scene in HM3D_SCENES[split]]
     return [(i, scene, split) for i, scene in enumerate(scenes)]
 
 
@@ -539,7 +539,7 @@ if __name__ == "__main__":
     # Generate episodes for all scenes
     with mp_ctx.Pool(CPU_THREADS, maxtasksperchild=1) as pool, tqdm.tqdm(
         total=len(inputs)
-    ) as pbar, open("ovon/dataset/train_subtotals.json", "w") as f:
+    ) as pbar, open("data/train_subtotals.json", "w") as f:
         total_all = 0
         subtotals = []
         for scene, subtotal, subtotal_by_cat, fname in pool.imap_unordered(
