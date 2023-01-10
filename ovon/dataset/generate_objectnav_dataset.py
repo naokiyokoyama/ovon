@@ -26,9 +26,11 @@ import seaborn as sns
 import tqdm
 import trimesh
 from habitat.config.default import get_agent_config, get_config
-from habitat.config.default_structured_configs import HabitatSimSemanticSensorConfig
+from habitat.config.default_structured_configs import \
+    HabitatSimSemanticSensorConfig
 from habitat.config.read_write import read_write
-from ovon.dataset.episode_generator import build_goal, generate_objectnav_episode_v2
+from ovon.dataset.episode_generator import (build_goal,
+                                            generate_objectnav_episode_v2)
 from ovon.dataset.hm3d_constants import GOAL_CATEGORIES, HM3D_SCENES
 from sklearn.cluster import AgglomerativeClustering
 
@@ -515,7 +517,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--split",
-        choices=["train_v0.2", "val_v0.2", "test_v0.2", "train", "minival", "*"],
+        choices=["train_v0.2", "val_v0.2", "test_v0.2", "*"],
         required=True,
         type=str,
     )
