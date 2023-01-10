@@ -55,13 +55,12 @@ def main():
             f"(Current value: {os.environ['JUNK']})"
         )
 
-        # Remove resume state
-        if osp.isfile(osp.join(os.environ["JUNK"], ".habitat-resume-state.pth")):
-            os.remove(osp.join(os.environ["JUNK"], "junk.log"))
+        # Disable resuming
+        args.opts.append("habitat_baselines.load_resume_state_config=False")
 
         # Override config options with DEBUG_OPTIONS
         for k, v in DEBUG_OPTIONS.items():
-            args.opts.extend([k, v])
+            args.opts.append(f"{k}={v}")
 
     run_exp_args = {
         k: v for k, v in vars(args).items() if k in ["run_type", "exp_config", "opts"]
