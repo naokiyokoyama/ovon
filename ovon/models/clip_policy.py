@@ -14,7 +14,7 @@ from torchvision.transforms import functional as TF
 
 
 @baseline_registry.register_policy
-class PointNavResNetClipPolicy(NetPolicy):
+class PointNavResNetCLIPPolicy(NetPolicy):
     def __init__(
         self,
         observation_space: spaces.Dict,
