@@ -1,3 +1,14 @@
+# python
+__pycache__/
+*.egg-info/
+
+# environment
 variables.sh
 habitat-lab
+
+# development
 .idea
+.vscode
+
+# data
+data/
