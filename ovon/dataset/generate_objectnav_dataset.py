@@ -51,9 +51,9 @@ MIN_OBJECT_DISTANCE = 1.0
 MAX_OBJECT_DISTANCE = 30.0
 
 
-OUTPUT_OBJ_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.2/{VERSION_ID}"
-PLOT_FOLDER = "data/hm3d_semantic_v0.2_objectnav_plots"
-OUTPUT_JSON_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.2/{VERSION_ID}"
+OUTPUT_OBJ_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.1/{VERSION_ID}"
+PLOT_FOLDER = "data/hm3d_semantic_v0.1_objectnav_plots"
+OUTPUT_JSON_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.1/{VERSION_ID}"
 NUM_GPUS = len(GPUtil.getAvailable(limit=256))
 TASKS_PER_GPU = 12
 
@@ -324,6 +324,7 @@ def generate_scene(args):
     scene_key = get_scene_key(scene)
     fname_obj = f"{OUTPUT_OBJ_FOLDER}/{split}/content/{scene_key}_objs.pkl"
     fname = f"{OUTPUT_JSON_FOLDER}/{split}/content/{scene_key}.json{COMPRESSION}"
+    print("Write objects pkl at: {}".format(fname_obj))
 
     ############################################################################
     # Pre-compute goals
@@ -517,7 +518,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--split",
-        choices=["train_v0.2", "val_v0.2", "test_v0.2", "*"],
+        choices=["train_v0.2", "val_v0.2", "test_v0.2", "train", "*"],
         required=True,
         type=str,
     )
