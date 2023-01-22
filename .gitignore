@@ -12,3 +12,8 @@ habitat-lab
 
 # data
 data/
+
+# logs
+tb/
+train.log
+slurm_logs/
