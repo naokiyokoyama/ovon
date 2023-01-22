@@ -4,7 +4,10 @@ import argparse
 import os
 import os.path as osp
 
+from habitat.config.default_structured_configs import register_hydra_plugin
 from habitat_baselines.run import run_exp
+
+from ovon.config import HabitatConfigPlugin
 
 DEBUG_OPTIONS = {
     "habitat_baselines.tensorboard_dir": os.environ["JUNK"],
@@ -13,6 +16,10 @@ DEBUG_OPTIONS = {
     "habitat_baselines.checkpoint_folder": os.environ["JUNK"],
     "habitat_baselines.log_file": osp.join(os.environ["JUNK"], "junk.log"),
 }
+
+
+def register_plugins():
+    register_hydra_plugin(HabitatConfigPlugin)
 
 
 def main():
@@ -61,6 +68,9 @@ def main():
         # Override config options with DEBUG_OPTIONS
         for k, v in DEBUG_OPTIONS.items():
             args.opts.append(f"{k}={v}")
+
+    # Register custom hydra plugin
+    register_plugins()
 
     run_exp_args = {
         k: v for k, v in vars(args).items() if k in ["run_type", "exp_config", "opts"]
