@@ -65,6 +65,12 @@ def main():
         # Disable resuming
         args.opts.append("habitat_baselines.load_resume_state_config=False")
 
+        # Remove resume state if training
+        resume_state_path = osp.join(os.environ["JUNK"], ".habitat-resume-state.pth")
+        if args.run_type == "train" and osp.isfile(resume_state_path):
+            print("Removing resume state file:", osp.abspath(resume_state_path))
+            os.remove(resume_state_path)
+
         # Override config options with DEBUG_OPTIONS
         for k, v in DEBUG_OPTIONS.items():
             args.opts.append(f"{k}={v}")
