@@ -51,9 +51,9 @@ MIN_OBJECT_DISTANCE = 1.0
 MAX_OBJECT_DISTANCE = 30.0
 
 
-OUTPUT_OBJ_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.1/{VERSION_ID}"
-PLOT_FOLDER = "data/hm3d_semantic_v0.1_objectnav_plots"
-OUTPUT_JSON_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.1/{VERSION_ID}"
+OUTPUT_OBJ_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.2/{VERSION_ID}"
+PLOT_FOLDER = "data/hm3d_semantic_v0.2_objectnav_plots"
+OUTPUT_JSON_FOLDER = f"./data/datasets/objectnav/hm3d_semantic_v0.2/{VERSION_ID}"
 NUM_GPUS = len(GPUtil.getAvailable(limit=256))
 TASKS_PER_GPU = 12
 
