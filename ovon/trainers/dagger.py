@@ -37,6 +37,7 @@ from habitat_baselines.utils.common import (
     inference_mode,
 )
 from hydra.core.config_store import ConfigStore
+from omegaconf import OmegaConf
 from torch import optim
 
 from distributed_dagger.distributed_dagger.dagger import DAggerDDP
@@ -61,6 +62,8 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
         dagger_cfg = config.habitat_baselines.dagger
 
         logger.add_filehandler(config.habitat_baselines.log_file)
+        if rank0_only() and self.config.habitat_baselines.verbose:
+            logger.info(f"config: {OmegaConf.to_yaml(self.config)}")
 
         self.distribute_gpus()
         self.device = torch.device("cuda", self.config.habitat_baselines.torch_gpu_id)
@@ -75,11 +78,11 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
 
         self.static_encoder = not config.habitat_baselines.rl.ddppo.train_encoder
         self.setup_obs_action_space()
+        self.teacher = self.setup_policy(dagger_cfg.teacher_policy.name)
         self.actor_critic = self.setup_policy(dagger_cfg.policy.name, lp_mixin=True)
         if self.static_encoder:
             for param in self.actor_critic.net.visual_encoder.parameters():
                 param.requires_grad_(False)
-        self.teacher = self.setup_policy(dagger_cfg.teacher_policy.name)
 
         optimizer = self.get_optimizer()
 
@@ -161,9 +164,7 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
         obs_clone = TensorDict({k: v.clone() for k, v in observations.items()})
         if self.static_encoder:
             with inference_mode():
-                visual_feats = self.actor_critic.net.visual_encoder(
-                    observations
-                )
+                visual_feats = self.actor_critic.net.visual_encoder(observations)
             obs_clone[VISUAL_FEATURES_KEY] = visual_feats.clone()
         _, actions, _ = self.actor_critic.act(obs_clone, self.prev_actions, self.masks)
         self.prev_actions.copy_(actions)  # noqa
