@@ -5,7 +5,7 @@ defaults:
   - /habitat_baselines/rl/policy/obs_transforms:
     - center_cropper_base
     - resize_shortest_edge_base
-  - objectnav_rgb_hm3d
+  - objectnav_locobot_hm3d
   - _self_
 
 habitat:
@@ -38,7 +38,7 @@ habitat_baselines:
   rl:
 
     policy:
-      name: "PointNavResNetPolicy"
+      name: "PointNavResNetCLIPPolicy"
 
     ppo:
       # ppo params
