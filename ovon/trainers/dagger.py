@@ -1,6 +1,9 @@
 import inspect
 import random
+import time
+from collections import defaultdict, deque
 from dataclasses import dataclass
+from typing import Dict, List
 
 import gym.spaces
 import numpy as np
@@ -8,7 +11,7 @@ import torch
 from gym import spaces
 from habitat import logger
 from habitat.config import read_write
-from habitat_baselines import BaseTrainer
+from habitat_baselines import BaseTrainer, PPOTrainer
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.construct_vector_env import construct_envs
 from habitat_baselines.common.obs_transformers import (
@@ -47,7 +50,7 @@ VISUAL_FEATURES_KEY = PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
 
 
 @baseline_registry.register_trainer(name="dagger")
-class DAggerTrainer(DAggerDDP, BaseTrainer):
+class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
     actor_critic = NetPolicy
     continuous_actions: bool = False
     obs_transforms = []
@@ -66,7 +69,6 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
             logger.info(f"config: {OmegaConf.to_yaml(self.config)}")
 
         self.distribute_gpus()
-        self.device = torch.device("cuda", self.config.habitat_baselines.torch_gpu_id)
         torch.cuda.set_device(self.device)
 
         self.envs = construct_envs(
@@ -99,6 +101,17 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
             tb_dir=config.habitat_baselines.tensorboard_dir,
             checkpoint_folder=config.habitat_baselines.checkpoint_folder,
         )
+
+        self.t_iter_start = time.time()
+        self.log_time = 0
+        self.window_episode_stats = defaultdict(
+            lambda: deque(maxlen=config.habitat_baselines.rl.ppo.reward_window_size)
+        )
+        self.loss_deque = deque(
+            maxlen=config.habitat_baselines.rl.ppo.reward_window_size
+        )
+        if self._is_distributed:
+            self.init_distributed(find_unused_params=True)
 
     def setup_obs_action_space(self):
         self.obs_transforms = get_active_obs_transforms(self.config)
@@ -177,29 +190,76 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
         actions = [a.item() for a in actions.cpu()]
         return super().step_envs(actions)
 
-    def update_tensorboard(self, observations, rewards, dones, infos, action_loss):
-        pass
+    @classmethod
+    def _extract_scalars_from_infos(cls, infos) -> Dict[str, List[float]]:
+        return PPOTrainer._extract_scalars_from_infos(infos)  # noqa
+
+    def _all_reduce(self, t: torch.Tensor) -> torch.Tensor:
+        return PPOTrainer._all_reduce(self, t)  # noqa
+
+    def update_metrics(self, observations, rewards, dones, infos, action_loss):
+        scalar_infos = self._extract_scalars_from_infos(infos)
+        for k, scalar_list in scalar_infos.items():
+            for idx, s in enumerate(scalar_list):
+                if dones[idx]:
+                    self.window_episode_stats[k].append(s)
+        if action_loss is not None:
+            self.loss_deque.append(action_loss.item())
+        self.log_time += time.time() - self.t_iter_start
+
+        if not self.num_steps_done % self.batch_length == 0:
+            return  # skip logging and tensorboard if next update hasn't happened
+
+        mean_stats = {
+            k: torch.tensor(np.mean(v) if len(v) > 0 else 0.0)
+            for k, v in self.window_episode_stats.items()
+        }
+        mean_loss = np.mean(self.loss_deque) if len(self.loss_deque) > 0 else 0.0
+        stats_ordering = sorted(self.window_episode_stats.keys())
+        mean_stats = torch.stack(
+            [mean_stats[k] for k in stats_ordering] + [torch.tensor(mean_loss)], 0
+        )
+        mean_stats = self._all_reduce(mean_stats)
+
+        if not rank0_only():
+            return  # after synchronization, skip logging and tensorboard if not rank 0
+
+        # Log to console and disk
+        if self.num_updates_done % self.config.habitat_baselines.log_interval == 0:
+            fps = (self.num_envs * self.batch_length) / self.log_time
+            logger.info(
+                f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
+                f"{self.num_steps_done}\tavg loss: {mean_stats[-1]:.3f}"
+            )
+            window_scalars = []
+            for idx, k in enumerate(stats_ordering):
+                window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
+            logger.info("  ".join(window_scalars))
+            self.log_time = 0
+
+        # Update tensorboard
 
     def distribute_gpus(self):
-        if not self._is_distributed:
-            return
-        local_rank, tcp_store = init_distrib_slurm(
-            self.config.habitat_baselines.rl.ddppo.distrib_backend
-        )
-        if rank0_only():
-            logger.info(
-                f"Initialized DAgger with {torch.distributed.get_world_size()} workers"  # noqa
+        if self._is_distributed:
+            local_rank, tcp_store = init_distrib_slurm(
+                self.config.habitat_baselines.rl.ddppo.distrib_backend
             )
+            with read_write(self.config):
+                self.config.habitat_baselines.torch_gpu_id = local_rank
+                self.config.habitat.simulator.habitat_sim_v0.gpu_device_id = local_rank
+                # Multiply by the number of simulators to make sure they also get unique
+                # seeds
+                self.config.habitat.seed += (
+                    torch.distributed.get_rank()  # noqa
+                    * self.config.habitat_baselines.num_environments
+                )
+            if rank0_only():
+                world_size = torch.distributed.get_world_size()  # noqa
+                logger.info(f"Initialized DDP DAgger with {world_size} workers")
+        else:
+            logger.info(f"Initialized non-distributed DAgger")
 
-        with read_write(self.config):
-            self.config.habitat_baselines.torch_gpu_id = local_rank
-            self.config.habitat.simulator.habitat_sim_v0.gpu_device_id = local_rank
-            # Multiply by the number of simulators to make sure they also get unique
-            # seeds
-            self.config.habitat.seed += (
-                torch.distributed.get_rank()  # noqa
-                * self.config.habitat_baselines.num_environments
-            )
+        self.device = torch.device("cuda", self.config.habitat_baselines.torch_gpu_id)
 
         random.seed(self.config.habitat.seed)
         np.random.seed(self.config.habitat.seed)
@@ -223,6 +283,10 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):
 
         optimizer = optim_cls(**optim_kwargs)
         return optimizer
+
+    def percent_done(self) -> float:
+        self.t_iter_start = time.time()
+        return super().percent_done()
 
 
 @dataclass
