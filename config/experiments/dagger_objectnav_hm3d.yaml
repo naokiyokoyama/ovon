@@ -1,0 +1,79 @@
+# @package _global_
+
+defaults:
+  - /habitat_baselines: habitat_baselines_dagger_config_base
+  - /habitat_baselines/rl/policy/obs_transforms:
+    - center_cropper_base
+    - resize_shortest_edge_base
+  - /habitat/task/lab_sensors:
+    - objnav_explorer
+  - /habitat/task/measurements:
+    - frontier_exploration_map
+    - collisions
+  - objectnav_rgb_hm3d
+  - _self_
+
+habitat:
+  environment:
+    iterator_options:
+      max_scene_repeat_steps: 50000
+  task:
+    lab_sensors:
+      objnav_explorer:
+        map_resolution: 128
+
+habitat_baselines:
+  torch_gpu_id: 0
+  tensorboard_dir: "tb"
+  video_dir: "video_dir"
+  test_episode_count: -1
+  eval_ckpt_path_dir: "data/new_checkpoints"
+  num_environments: 16
+  checkpoint_folder: "data/new_checkpoints"
+  trainer_name: "dagger"
+  num_updates: 270000
+  log_interval: 10
+  num_checkpoints: 100
+  # Force PyTorch to be single threaded as
+  # this improves performance considerably
+  force_torch_single_threaded: True
+
+  eval:
+    split: "val"
+
+  dagger:
+    batch_length: 20
+    lr: 3e-4
+    eps: 1e-5
+    num_updates: 100
+    policy:
+      name: "PointNavResNetCLIPPolicy"
+    teacher_policy:
+      name: "FrontierExplorationPolicy"
+    teacher_forcing: False
+    total_num_steps: 1e6
+    updates_per_ckpt: 100
+
+  rl:
+    ppo:
+      hidden_size: 512
+
+    ddppo:
+      sync_frac: 0.6
+      # The PyTorch distributed backend to use
+      distrib_backend: NCCL
+      # Visual encoder backbone
+      pretrained_weights: data/ddppo-models/gibson-2plus-resnet50.pth
+      # Initialize with pretrained weights
+      pretrained: False
+      # Initialize just the visual encoder backbone with pretrained weights
+      pretrained_encoder: False
+      # Whether or not the visual encoder backbone will be trained.
+      train_encoder: False
+      # Whether or not to reset the critic linear layer
+      reset_critic: True
+
+      # Model parameters
+      backbone: resnet50_clip_avgpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
