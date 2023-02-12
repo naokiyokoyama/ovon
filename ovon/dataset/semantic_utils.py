@@ -1,4 +1,4 @@
-import csv
+import json
 import os
 from collections.abc import MutableMapping
 from typing import Dict, Iterable, Optional, Set
@@ -9,31 +9,19 @@ class ObjectCategoryMapping(MutableMapping):
     _mapping: Dict[str, str]
 
     def __init__(
-        self, mapping_file: str, allowed_categories: Optional[Set[str]] = None
+        self, allowed_categories_file: str, allowed_categories: Optional[Set[str]] = None
     ) -> None:
         self._mapping = self.limit_mapping(
-            self.load_mapping(mapping_file), allowed_categories
+            self.load_categories(allowed_categories_file), allowed_categories
         )
 
     @staticmethod
-    def load_mapping(mapping_file: str) -> Dict[str, str]:
+    def load_categories(allow_categories_file: str) -> Dict[str, str]:
         mapping = {}
-        with open(mapping_file, "r") as tsv_file:
-            tsv_reader = csv.reader(tsv_file, delimiter="\t")
-            is_first_row = True
-            for row in tsv_reader:
-                if is_first_row:
-                    is_first_row = False
-                    continue
-                raw_name = row[1]
-                cat_name = row[-1]
-                # Override the category name for plant
-                if "plant" in raw_name or "flower" in raw_name:
-                    cat_name = "plant"
-                mapping[raw_name] = cat_name
-                raw_name = row[2]
-                mapping[raw_name] = cat_name
 
+        all_categories = json.load(open(allow_categories_file, "r"))
+        for category in all_categories:
+            mapping[category] = category
         return mapping
 
     @staticmethod
