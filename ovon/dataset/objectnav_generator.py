@@ -585,7 +585,7 @@ def make_episodes_for_scene(
             "sample_lookat_deg_delta": 5.0,
         },
         category_mapping_file="data/hm3d_meta/filtered_raw_categories.json",
-        categories={"chair"},  # , "bed", "toilet", "sofa", "plant", "tv_monitor"},
+        categories=None,
         min_object_coverage=0.7,
         frame_cov_thresh=0.02,
         voxel_size=0.05,
