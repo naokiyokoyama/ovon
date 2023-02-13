@@ -1,12 +1,17 @@
 from collections import OrderedDict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import clip
 import torch
 from gym import spaces
+from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.ppo import NetPolicy
+from habitat_baselines.rl.models.rnn_state_encoder import \
+    build_rnn_state_encoder
+from habitat_baselines.rl.ppo import Net, NetPolicy
+from habitat_baselines.utils.common import get_num_actions
+from ovon.task.sensors import ClipObjectGoalSensor
 from torch import nn as nn
 from torch.nn import functional as F
 from torchvision import transforms as T
@@ -88,7 +93,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         )
 
 
-class PointNavResNetCLIPNet(PointNavResNetNet):
+class PointNavResNetCLIPNet(Net):
     def __init__(
         self,
         observation_space: spaces.Dict,
@@ -100,24 +105,27 @@ class PointNavResNetCLIPNet(PointNavResNetNet):
         fuse_keys: Optional[List[str]],
         force_blind_policy: bool = False,
         discrete_actions: bool = True,
+        clip_model: str = "RN50",
     ):
-        super().__init__(
-            observation_space,
-            action_space,
-            hidden_size,
-            num_recurrent_layers,
-            rnn_type,
-            "resnet18",  # dummy value; instantiates a temporary encoder
-            32,  # dummy value; instantiates a temporary encoder
-            fuse_keys,
-            force_blind_policy,
-            discrete_actions,
-        )
+        super().__init__()
+        self.prev_action_embedding: nn.Module
+        self.discrete_actions = discrete_actions
+        self._n_prev_action = 32
+        if discrete_actions:
+            self.prev_action_embedding = nn.Embedding(
+                action_space.n + 1, self._n_prev_action
+            )
+        else:
+            num_actions = get_num_actions(action_space)
+            self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
+        self._n_prev_action = 32
+        rnn_input_size = self._n_prev_action  # test
 
         # Re-define (overwrite) the visual_encoder attribute from ResNet to CLIP
         self.visual_encoder = ResNetCLIPEncoder(
             observation_space,
             pooling="avgpool" if "avgpool" in backbone else "attnpool",
+            clip_model=clip_model,
         )
         if not self.visual_encoder.is_blind:
             self.visual_fc = nn.Sequential(
@@ -125,16 +133,106 @@ class PointNavResNetCLIPNet(PointNavResNetNet):
                 nn.ReLU(True),
             )
 
+        if ObjectGoalSensor.cls_uuid in observation_space.spaces:
+            self._n_object_categories = (
+                int(observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]) + 1
+            )
+            self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
+            rnn_input_size += 32
+
+        if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
+            rnn_input_size += 1024 if clip_model == "RN50" else 768
+
+        self._hidden_size = hidden_size
+
+        self.state_encoder = build_rnn_state_encoder(
+            (0 if self.is_blind else self._hidden_size) + rnn_input_size,
+            self._hidden_size,
+            rnn_type=rnn_type,
+            num_layers=num_recurrent_layers,
+        )
+
+        self.train()
+
+    @property
+    def output_size(self):
+        return self._hidden_size
+
+    @property
+    def is_blind(self):
+        return self.visual_encoder.is_blind
+
+    @property
+    def num_recurrent_layers(self):
+        return self.state_encoder.num_recurrent_layers
+
+    @property
+    def perception_embedding_size(self):
+        return self._hidden_size
+
+    def forward(
+        self,
+        observations: Dict[str, torch.Tensor],
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        rnn_build_seq_info: Optional[Dict[str, torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+        x = []
+        aux_loss_state = {}
+        if not self.is_blind:
+            # We CANNOT use observations.get() here because self.visual_encoder(observations)
+            # is an expensive operation. Therefore, we need `# noqa: SIM401`
+            if (  # noqa: SIM401
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
+            ):
+                visual_feats = observations[
+                    PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
+                ]
+            else:
+                visual_feats = self.visual_encoder(observations)
+
+            visual_feats = self.visual_fc(visual_feats)
+            aux_loss_state["perception_embed"] = visual_feats
+            x.append(visual_feats)
+
+        if ObjectGoalSensor.cls_uuid in observations:
+            object_goal = observations[ObjectGoalSensor.cls_uuid].long()
+            x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
+
+        if ClipObjectGoalSensor.cls_uuid in observations:
+            object_goal = observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
+            x.append(object_goal)
+
+        prev_actions = prev_actions.squeeze(-1)
+        start_token = torch.zeros_like(prev_actions)
+        # The mask means the previous action will be zero, an extra dummy action
+        prev_actions = self.prev_action_embedding(
+            torch.where(masks.view(-1), prev_actions + 1, start_token)
+        )
+
+        x.append(prev_actions)
+
+        out = torch.cat(x, dim=1)
+        out, rnn_hidden_states = self.state_encoder(
+            out, rnn_hidden_states, masks, rnn_build_seq_info
+        )
+        aux_loss_state["rnn_output"] = out
+
+        return out, rnn_hidden_states, aux_loss_state
+
 
 class ResNetCLIPEncoder(nn.Module):
-    def __init__(self, observation_space: spaces.Dict, pooling="attnpool"):
+    def __init__(
+        self, observation_space: spaces.Dict, pooling="attnpool", clip_model="RN50"
+    ):
         super().__init__()
 
         self.rgb = "rgb" in observation_space.spaces
         self.depth = "depth" in observation_space.spaces
 
         if not self.is_blind:
-            model, preprocess = clip.load("RN50")
+            model, preprocess = clip.load(clip_model)
 
             # expected input: C x H x W (np.uint8 in [0-255])
             self.preprocess = T.Compose(
