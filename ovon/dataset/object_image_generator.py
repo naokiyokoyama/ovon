@@ -17,6 +17,7 @@ from habitat.config.default_structured_configs import HabitatSimSemanticSensorCo
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from ovon.dataset.hm3d_constants import HM3D_SCENES
 from ovon.dataset.generate_objectnav_dataset import get_scene_key
+from ovon.dataset.pose_sampler import PoseSampler
 from PIL import Image, ImageDraw
 import itertools
 import math
@@ -26,12 +27,6 @@ pi = math.pi
 SCENES_ROOT = "data/scene_datasets/hm3d"
 NUM_GPUS = len(GPUtil.getAvailable(limit=256))
 TASKS_PER_GPU = 12
-
-def _direction_to_quaternion(direction_vector: np.array):
-    origin_vector = np.array([0, 0, -1])
-    output = quaternion_from_two_vectors(origin_vector, direction_vector)
-    output = output.normalized()
-    return output
 
 def create_html(objects, file_name, scene_key):
     html_text = """
@@ -119,105 +114,26 @@ def create_html(objects, file_name, scene_key):
     f.write(html_text)
     f.close()
 
-def set_agent_state(sim,pt, q, angle = 1):
-    agent = sim.get_agent(0)
-    agent_state = agent.get_state()
-    agent_state.position = pt  # world space
-    agent_state.rotation = q
-    agent.set_state(agent_state)
-    if(angle == 0):
-        agent.act(HabitatSimActions.look_down)
-    elif(angle == 2):
-        agent.act(HabitatSimActions.look_up)
-    obs = sim.get_sensor_observations()
-    return obs
-
-def down_is_navigable(sim, pt, search_dist=2.0):
-        pf = sim.pathfinder
-        delta_y = 0.05
-        max_steps = int(search_dist / delta_y)
-        step = 0
-        is_navigable = pf.is_navigable(pt, 2)
-        while not is_navigable:
-            pt[1] -= delta_y
-            is_navigable = pf.is_navigable(pt)
-            step += 1
-            if step == max_steps:
-                return False
-        return True
-
-def _get_iou(sim, pt, object, max_distance = 1.0):
-    if not down_is_navigable(sim, pt):
-        return -1.0, pt, None, "Down is not navigable"
-    pf = sim.pathfinder
-    pt = np.array(pf.snap_point(pt))
-
-    goal_direction = object.aabb.center - pt
-    goal_direction[1] = 0
-
-    q = _direction_to_quaternion(goal_direction)
-    if(not np.isnan(q).any()):
-        cov = 0
-        agent = sim.get_agent(0)
-        maxcov = 0
-        best_angle = 1
-        
-        for i in range(3):
-            for v in agent._sensors.values():
-                v.set_transformation_from_spec()
-                
-            obs = set_agent_state(sim, pt,q,i)
-            cov = compute_pixel_coverage(obs["semantic"], object.semantic_id)
-            if(cov >= maxcov):
-                best_angle = i
-                maxcov = cov
-        
-        return maxcov, pt, q, best_angle,  "Success"
-    else :
-        return -0.5, pt, None, None, "Qaternion is nan"
 
 def _get_iou_pose(sim, pose, object):
     agent = sim.get_agent(0)
-
     obs = agent.set_state(pose)
     cov = compute_pixel_coverage(obs["semantic"], object.semantic_id)
     if(cov >= maxcov):
         maxcov = cov
     
-    return maxcov, pose,  "Success"
+    return maxcov, pose, "Success"
 
-def points_on_circle(r,n=100):
-    return np.array([(math.cos(2*pi/n*x)*r,math.sin(2*pi/n*x)*r) for x in range(0,n+1)])
-
-def get_best_viewpoint(sim,object):
-    "Returns the best viewpoint of object"
-    "Gets points on radius r = 2*max(obj.x_len, obj.y_len)"
-
-    pos = object.aabb.center
-    r = 2*min((np.max(object.aabb.sizes)),1.0)
-    #Sample 50 points on circle with "pos" center and radius "r"
-    points = points_on_circle(r,50) + np.array([pos[0],pos[2]])
-    candidate_poses = [
-        np.array([x, pos[1], z]) for (x, z) in points
-    ]
-    candidate_poses_ious = list(_get_iou(sim, pos,object) for pos in candidate_poses)
-    candidate_poses_ious_filtered = [p for p in candidate_poses_ious if p[0] > 0]
-    candidate_poses_sorted = sorted(candidate_poses_ious_filtered, key=lambda x: x[0], reverse=True)
-    if candidate_poses_sorted:  
-        return True, candidate_poses_sorted[0]
-    else :
-        return False, None
 
 def get_best_viewpoint_with_posesampler(sim, object, pose_sampler):
     candidate_states = pose_sampler.sample_agent_poses_radially(object)
-    candidate_poses_ious = list(_get_iou(sim, pos,object) for pos in candidate_states)
+    candidate_poses_ious = list(_get_iou_pose(sim, pos,object) for pos in candidate_states)
     candidate_poses_ious_filtered = [p for p in candidate_poses_ious if p[0] > 0]
     candidate_poses_sorted = sorted(candidate_poses_ious_filtered, key=lambda x: x[0], reverse=True)
     if candidate_poses_sorted:  
         return True, candidate_poses_sorted[0]
     else :
         return False, None
-
 
 def get_bounding_box(obs, object):
     a_args = np.argwhere(obs["semantic"] == (object.semantic_id))
@@ -239,8 +155,6 @@ def get_objects(sim, objects_info, scene_key, obj_mapping):
 
     if not osp.isdir(f"data/images/objects/{scene_key}"):
         os.makedir(f"data/images/objects/{scene_key}")
-
-
 
     pose_sampler = PoseSampler(
         sim=sim,
