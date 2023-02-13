@@ -13,6 +13,6 @@ except ModuleNotFoundError as e:
         print(
             "Warning: frontier_exploration package not installed. Things may not work. "
             "To install:\n"
-            "git clone git@github.com:naokiyokoyama/frontier_explorer.git &&\n"
-            "cd frontier_explorer && pip install -e ."
+            "git clone git@github.com:naokiyokoyama/frontier_exploration.git &&\n"
+            "cd frontier_exploration && pip install -e ."
         )

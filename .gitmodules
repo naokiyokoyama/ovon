@@ -1,0 +1,6 @@
+[submodule "distributed_dagger"]
+	path = distributed_dagger
+	url = git@github.com:naokiyokoyama/distributed_dagger
+[submodule "frontier_exploration"]
+	path = frontier_exploration
+	url = git@github.com:naokiyokoyama/frontier_exploration
