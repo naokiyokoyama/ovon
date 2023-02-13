@@ -2,7 +2,7 @@ from ovon import config
 from ovon.measurements import collision_penalty, sum_reward
 from ovon.models import clip_policy
 from ovon.task import sensors
-from ovon.trainers import dagger, ppo_trainer_no_2d
+from ovon.trainers import dagger_trainer, ppo_trainer_no_2d
 
 try:
     import frontier_exploration
