@@ -21,6 +21,8 @@ habitat:
     lab_sensors:
       objnav_explorer:
         map_resolution: 128
+  dataset:
+    split: train_single_story
 
 habitat_baselines:
   torch_gpu_id: 0
@@ -45,14 +47,13 @@ habitat_baselines:
     batch_length: 20
     lr: 3e-4
     eps: 1e-5
-    num_updates: 100
     policy:
       name: "PointNavResNetCLIPPolicy"
     teacher_policy:
       name: "FrontierExplorationPolicy"
     teacher_forcing: False
     total_num_steps: 1e6
-    updates_per_ckpt: 100
+    updates_per_ckpt: 500
 
   rl:
     ppo:
