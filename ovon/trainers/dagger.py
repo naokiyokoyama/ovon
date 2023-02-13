@@ -57,6 +57,7 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
     observation_space: spaces.Dict
     prev_actions: torch.tensor
     policy_action_space: gym.spaces.Space
+    num_workers: int = 1
     teacher = NetPolicy
 
     def __init__(self, config):
@@ -64,12 +65,10 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         self._is_distributed = get_distrib_size()[2] > 1
         dagger_cfg = config.habitat_baselines.dagger
 
-        logger.add_filehandler(config.habitat_baselines.log_file)
-        if rank0_only() and self.config.habitat_baselines.verbose:
-            logger.info(f"config: {OmegaConf.to_yaml(self.config)}")
-
         self.distribute_gpus()
-        torch.cuda.set_device(self.device)
+        if rank0_only() and self.config.habitat_baselines.verbose:
+            logger.add_filehandler(config.habitat_baselines.log_file)
+            logger.info(f"config: {OmegaConf.to_yaml(self.config)}")
 
         self.envs = construct_envs(
             config,
@@ -96,7 +95,7 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
             total_num_steps=dagger_cfg.total_num_steps,
             device=self.device,
             updates_per_ckpt=dagger_cfg.updates_per_ckpt,
-            num_updates=dagger_cfg.num_updates,
+            num_updates=config.habitat_baselines.num_updates,
             teacher_forcing=dagger_cfg.teacher_forcing,
             tb_dir=config.habitat_baselines.tensorboard_dir,
             checkpoint_folder=config.habitat_baselines.checkpoint_folder,
@@ -205,39 +204,49 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
                     self.window_episode_stats[k].append(s)
         if action_loss is not None:
             self.loss_deque.append(action_loss.item())
-        self.log_time += time.time() - self.t_iter_start
+        if rank0_only():
+            self.log_time += time.time() - self.t_iter_start
 
-        if not self.num_steps_done % self.batch_length == 0:
-            return  # skip logging and tensorboard if next update hasn't happened
-
-        mean_stats = {
-            k: torch.tensor(np.mean(v) if len(v) > 0 else 0.0)
-            for k, v in self.window_episode_stats.items()
-        }
-        mean_loss = np.mean(self.loss_deque) if len(self.loss_deque) > 0 else 0.0
-        stats_ordering = sorted(self.window_episode_stats.keys())
-        mean_stats = torch.stack(
-            [mean_stats[k] for k in stats_ordering] + [torch.tensor(mean_loss)], 0
-        )
-        mean_stats = self._all_reduce(mean_stats)
-
-        if not rank0_only():
-            return  # after synchronization, skip logging and tensorboard if not rank 0
-
-        # Log to console and disk
-        if self.num_updates_done % self.config.habitat_baselines.log_interval == 0:
-            fps = (self.num_envs * self.batch_length) / self.log_time
-            logger.info(
-                f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
-                f"{self.num_steps_done}\tavg loss: {mean_stats[-1]:.3f}"
+        # Only update/synchronize/log stats on update steps
+        if self.num_train_iter % self.batch_length == 0:
+            mean_stats = {
+                k: torch.tensor(np.mean(v) if len(v) > 0 else 0.0)
+                for k, v in self.window_episode_stats.items()
+            }
+            mean_loss = np.mean(self.loss_deque) if len(self.loss_deque) > 0 else 0.0
+            stats_ordering = sorted(self.window_episode_stats.keys())
+            mean_stats = torch.stack(
+                [mean_stats[k] for k in stats_ordering] + [torch.tensor(mean_loss)], 0
             )
-            window_scalars = []
-            for idx, k in enumerate(stats_ordering):
-                window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
-            logger.info("  ".join(window_scalars))
-            self.log_time = 0
+            mean_stats = self._all_reduce(mean_stats)
 
-        # Update tensorboard
+            if not rank0_only():
+                return  # only rank 0 should move on to log/tensorboard/checkpoint
+
+            fps = (self.num_envs * self.batch_length * self.num_workers) / self.log_time
+            metrics = {k: mean_stats[idx] for idx, k in enumerate(stats_ordering)}
+            names = [("", self.num_steps_done), ("_per_update", self.num_updates_done)]
+            for name, x in names:
+                for k, v in metrics.items():
+                    self.writer.add_scalar(f"metrics{name}/{k}", v, x)
+                self.writer.add_scalar(f"learner{name}/loss", mean_stats[-1], x)
+                self.writer.add_scalar(f"perf{name}/fps", fps, x)
+
+            if self.num_updates_done % self.config.habitat_baselines.log_interval == 0:
+                logger.info(
+                    f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
+                    f"{self.num_steps_done}\tavg loss: {mean_stats[-1]:.3f}"
+                )
+                window_scalars = []
+                for idx, k in enumerate(stats_ordering):
+                    window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
+                logger.info("  ".join(window_scalars))
+                self.log_time = 0
+
+            if self.should_save_now():
+                checkpoint, ckpt_path = self.generate_checkpoint()
+                checkpoint["config"] = self.config
+                torch.save(checkpoint, ckpt_path)
 
     def distribute_gpus(self):
         if self._is_distributed:
@@ -253,9 +262,9 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
                     torch.distributed.get_rank()  # noqa
                     * self.config.habitat_baselines.num_environments
                 )
+            self.num_workers = torch.distributed.get_world_size()  # noqa
             if rank0_only():
-                world_size = torch.distributed.get_world_size()  # noqa
-                logger.info(f"Initialized DDP DAgger with {world_size} workers")
+                logger.info(f"Initialized DDP DAgger with {self.num_workers} workers")
         else:
             logger.info(f"Initialized non-distributed DAgger")
 
@@ -264,6 +273,7 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         random.seed(self.config.habitat.seed)
         np.random.seed(self.config.habitat.seed)
         torch.manual_seed(self.config.habitat.seed)
+        torch.cuda.set_device(self.device)
 
     def get_optimizer(self):
         optim_cls = optim.Adam
