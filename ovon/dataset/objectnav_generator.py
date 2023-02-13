@@ -54,6 +54,7 @@ class ObjectGoalGenerator:
         hfov: float,
         agent_height: float,
         agent_radius: float,
+        sensor_height: float,
         pose_sampler_args: Dict[str, Any],
         category_mapping_file: str,
         categories: str,
@@ -74,6 +75,7 @@ class ObjectGoalGenerator:
         self.hfov = hfov
         self.agent_height = agent_height
         self.agent_radius = agent_radius
+        self.sensor_height = sensor_height
         self.pose_sampler_args = pose_sampler_args
         self.min_object_coverage = min_object_coverage
         self.frame_cov_thresh = frame_cov_thresh
@@ -108,7 +110,7 @@ class ObjectGoalGenerator:
             sensor_spec.uuid = f"{name}_sensor"
             sensor_spec.sensor_type = sensor_type
             sensor_spec.resolution = [self.img_size[0], self.img_size[1]]
-            sensor_spec.position = [0.0, self.agent_height, 0.0]
+            sensor_spec.position = [0.0, self.sensor_height, 0.0]
             sensor_spec.hfov = self.hfov
             sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
             sensor_specs.append(sensor_spec)
@@ -229,7 +231,7 @@ class ObjectGoalGenerator:
                 "iou": iou,
             }
             for iou, pt, q in candiatate_poses_ious
-            if iou > 0.0
+            if iou > self.frame_cov_thresh
         ]
         view_locations = sorted(view_locations, reverse=True, key=lambda v: v["iou"])
 
@@ -287,10 +289,6 @@ class ObjectGoalGenerator:
                 )
 
                 geo_dist, closest_pt = geo_dists[0]
-
-                # geo_dist, closest_pt = self._geodesic_distance(
-                #     sim, start_position, viewpoint_locs
-                # )
 
                 if not np.isfinite(geo_dist):
                     continue
@@ -575,6 +573,7 @@ def make_episodes_for_scene(
         hfov=90,
         agent_height=1.41,
         agent_radius=0.17,
+        sensor_height=1.31,
         pose_sampler_args={
             "r_min": 0.5,
             "r_max": 2.0,
@@ -585,7 +584,14 @@ def make_episodes_for_scene(
             "sample_lookat_deg_delta": 5.0,
         },
         category_mapping_file="data/hm3d_meta/filtered_raw_categories.json",
-        categories=None,
+        categories={
+            "chair",
+            "bed",
+            "toilet",
+            "sofa",
+            "plant",
+            "tv_monitor",
+        },
         min_object_coverage=0.7,
         frame_cov_thresh=0.02,
         voxel_size=0.05,
@@ -616,6 +622,7 @@ def make_episodes_for_split(split: str, outpath: str):
     scenes = list(get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split])[
         :1
     ]
+    print(scenes)
 
     for scene in tqdm(scenes, total=len(scenes), dynamic_ncols=True):
         make_episodes_for_scene(scene, outpath.format(split))
