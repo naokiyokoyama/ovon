@@ -101,8 +101,7 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
             checkpoint_folder=config.habitat_baselines.checkpoint_folder,
         )
 
-        self.t_iter_start = time.time()
-        self.log_time = 0
+        self.last_log_time = -1
         self.window_episode_stats = defaultdict(
             lambda: deque(maxlen=config.habitat_baselines.rl.ppo.reward_window_size)
         )
@@ -204,11 +203,12 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
                     self.window_episode_stats[k].append(s)
         if action_loss is not None:
             self.loss_deque.append(action_loss.item())
-        if rank0_only():
-            self.log_time += time.time() - self.t_iter_start
 
-        # Only update/synchronize/log stats on update steps
-        if self.num_train_iter % self.batch_length == 0:
+        # Only synchronize + log stats on log interval
+        if (
+            self.num_train_iter % self.batch_length == 0
+            and self.num_updates_done % self.config.habitat_baselines.log_interval == 0
+        ):
             mean_stats = {
                 k: torch.tensor(np.mean(v) if len(v) > 0 else 0.0)
                 for k, v in self.window_episode_stats.items()
@@ -223,7 +223,17 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
             if not rank0_only():
                 return  # only rank 0 should move on to log/tensorboard/checkpoint
 
-            fps = (self.num_envs * self.batch_length * self.num_workers) / self.log_time
+            if self.num_workers > 1:
+                mean_stats /= self.num_workers
+
+            log_time = time.time() - self.last_log_time
+            fps = (
+                self.num_workers
+                * self.num_envs
+                * self.batch_length
+                * self.config.habitat_baselines.log_interval
+            ) / log_time
+            self.last_log_time = time.time()
             metrics = {k: mean_stats[idx] for idx, k in enumerate(stats_ordering)}
             names = [("", self.num_steps_done), ("_per_update", self.num_updates_done)]
             for name, x in names:
@@ -232,16 +242,14 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
                 self.writer.add_scalar(f"learner{name}/loss", mean_stats[-1], x)
                 self.writer.add_scalar(f"perf{name}/fps", fps, x)
 
-            if self.num_updates_done % self.config.habitat_baselines.log_interval == 0:
-                logger.info(
-                    f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
-                    f"{self.num_steps_done}\tavg loss: {mean_stats[-1]:.3f}"
-                )
-                window_scalars = []
-                for idx, k in enumerate(stats_ordering):
-                    window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
-                logger.info("  ".join(window_scalars))
-                self.log_time = 0
+            logger.info(
+                f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
+                f"{self.num_steps_done}\tavg loss: {mean_stats[-1]:.3f}"
+            )
+            window_scalars = []
+            for idx, k in enumerate(stats_ordering):
+                window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
+            logger.info("  ".join(window_scalars))
 
             if self.should_save_now():
                 checkpoint, ckpt_path = self.generate_checkpoint()
@@ -294,9 +302,10 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         optimizer = optim_cls(**optim_kwargs)
         return optimizer
 
-    def percent_done(self) -> float:
-        self.t_iter_start = time.time()
-        return super().percent_done()
+    def train_setup(self):
+        observations = super().train_setup()
+        self.last_log_time = time.time()
+        return observations
 
 
 @dataclass
