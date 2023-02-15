@@ -235,7 +235,8 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
             ) / log_time
             self.last_log_time = time.time()
             metrics = {k: mean_stats[idx] for idx, k in enumerate(stats_ordering)}
-            names = [("", self.num_steps_done), ("_per_update", self.num_updates_done)]
+            total_steps = self.num_steps_done * self.num_workers
+            names = [("", total_steps), ("_per_update", self.num_updates_done)]
             for name, x in names:
                 for k, v in metrics.items():
                     self.writer.add_scalar(f"metrics{name}/{k}", v, x)
@@ -244,7 +245,7 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
 
             logger.info(
                 f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
-                f"{self.num_steps_done}\tavg loss: {mean_stats[-1]:.3f}"
+                f"{total_steps}\tavg loss: {mean_stats[-1]:.3f}"
             )
             window_scalars = []
             for idx, k in enumerate(stats_ordering):
