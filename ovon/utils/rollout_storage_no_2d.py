@@ -20,7 +20,7 @@ class RolloutStorageNo2D(RolloutStorage):
         # Remove any 2D observations from the rollout storage buffer
         delete_keys = []
         for sensor in self.buffers["observations"]:
-            if self.buffers["observations"][sensor].dim() == 4:  # NCHW -> 4 dims
+            if self.buffers["observations"][sensor].dim() >= 4:  # NCHW -> 4 dims
                 delete_keys.append(sensor)
         for k in delete_keys:
             del self.buffers["observations"][k]
@@ -32,7 +32,7 @@ class RolloutStorageNo2D(RolloutStorage):
         filtered_obs = TensorDict()
         for sensor in obs:
             # Filter out 2D observations
-            if self.buffers["observations"][sensor].dim() != 4:
+            if obs[sensor].dim() < 4:
                 filtered_obs[sensor] = obs[sensor]
         # Extract visual features from 2D observations
         filtered_obs[
