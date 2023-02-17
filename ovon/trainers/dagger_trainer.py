@@ -1,17 +1,16 @@
 import inspect
 import random
-import time
-from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Tuple, Union
 
 import gym.spaces
 import numpy as np
 import torch
+import torch.nn.functional as F
 from gym import spaces
 from habitat import logger
 from habitat.config import read_write
-from habitat_baselines import BaseTrainer, PPOTrainer
+from habitat_baselines import BaseTrainer, RolloutStorage
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.construct_vector_env import construct_envs
 from habitat_baselines.common.obs_transformers import (
@@ -19,7 +18,6 @@ from habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_obs_space,
     get_active_obs_transforms,
 )
-from habitat_baselines.common.tensor_dict import TensorDict
 from habitat_baselines.config.default_structured_configs import (
     HabitatBaselinesBaseConfig,
     HabitatBaselinesRLConfig,
@@ -29,7 +27,6 @@ from habitat_baselines.rl.ddppo.ddp_utils import (
     get_distrib_size,
     init_distrib_slurm,
     is_slurm_batch_job,
-    rank0_only,
 )
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
 from habitat_baselines.rl.ppo import NetPolicy
@@ -37,14 +34,15 @@ from habitat_baselines.utils.common import (
     batch_obs,
     get_num_actions,
     is_continuous_action_space,
-    inference_mode,
 )
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 from torch import optim
 
+from distributed_dagger.ddp import rank0_only
 from distributed_dagger.distributed_dagger.dagger import DAggerDDP
-from ovon.models.model_utils import ComputeLogProbsMixin, RecurrentPolicyMixin
+from ovon.models.model_utils import DAggerPolicyMixin
+from ovon.utils.rollout_storage_no_2d import RolloutStorageNo2D
 
 VISUAL_FEATURES_KEY = PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
 
@@ -52,17 +50,17 @@ VISUAL_FEATURES_KEY = PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
 @baseline_registry.register_trainer(name="dagger")
 class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
     actor_critic = NetPolicy
+    action_shape: Tuple[int]
     continuous_actions: bool = False
     obs_transforms = []
     observation_space: spaces.Dict
     prev_actions: torch.tensor
     policy_action_space: gym.spaces.Space
-    num_workers: int = 1
+    rollouts: Union[RolloutStorage, RolloutStorageNo2D]
     teacher = NetPolicy
 
     def __init__(self, config):
         self.config = config
-        self._is_distributed = get_distrib_size()[2] > 1
         dagger_cfg = config.habitat_baselines.dagger
 
         self.distribute_gpus()
@@ -75,22 +73,25 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
             workers_ignore_signals=is_slurm_batch_job(),
             enforce_scenes_greater_eq_environments=False,
         )
-        self.masks = torch.zeros(self.num_envs, 1, device=self.device, dtype=torch.bool)
 
-        self.static_encoder = not config.habitat_baselines.rl.ddppo.train_encoder
         self.setup_obs_action_space()
         self.teacher = self.setup_policy(dagger_cfg.teacher_policy.name)
-        self.actor_critic = self.setup_policy(dagger_cfg.policy.name, lp_mixin=True)
+        self.actor_critic = self.setup_policy(dagger_cfg.policy.name)
+        self.static_encoder = not config.habitat_baselines.rl.ddppo.train_encoder
         if self.static_encoder:
             for param in self.actor_critic.net.visual_encoder.parameters():
                 param.requires_grad_(False)
 
-        optimizer = self.get_optimizer()
+        # Masks to support Habitat's recurrent policies
+        self.masks = torch.zeros(self.num_envs, 1, device=self.device, dtype=torch.bool)
+
+        if self.is_distributed:
+            self.init_distributed(find_unused_params=True)
 
         super().__init__(
             envs=self.envs,
             actor_critic=self.actor_critic,
-            optimizer=optimizer,
+            optimizer=self.get_optimizer(),
             batch_length=dagger_cfg.batch_length,
             total_num_steps=dagger_cfg.total_num_steps,
             device=self.device,
@@ -100,16 +101,6 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
             tb_dir=config.habitat_baselines.tensorboard_dir,
             checkpoint_folder=config.habitat_baselines.checkpoint_folder,
         )
-
-        self.last_log_time = -1
-        self.window_episode_stats = defaultdict(
-            lambda: deque(maxlen=config.habitat_baselines.rl.ppo.reward_window_size)
-        )
-        self.loss_deque = deque(
-            maxlen=config.habitat_baselines.rl.ppo.reward_window_size
-        )
-        if self._is_distributed:
-            self.init_distributed(find_unused_params=True)
 
     def setup_obs_action_space(self):
         self.obs_transforms = get_active_obs_transforms(self.config)
@@ -121,24 +112,23 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         self.continuous_actions = is_continuous_action_space(self.policy_action_space)
         if self.continuous_actions:
             # Assume NONE of the actions are discrete
-            action_shape = (get_num_actions(self.policy_action_space),)
+            self.action_shape = (get_num_actions(self.policy_action_space),)
             discrete_actions = False
         else:
             # For discrete pointnav
-            action_shape = (1,)
+            self.action_shape = (1,)
             discrete_actions = True
         self.prev_actions = torch.zeros(
             self.num_envs,
-            *action_shape,
+            *self.action_shape,
             device=self.device,
             dtype=torch.long if discrete_actions else torch.float,
         )
 
-    def setup_policy(self, policy_name, lp_mixin=False):
+    def setup_policy(self, policy_name):
         # fmt: off
         policy_cls = baseline_registry.get_policy(policy_name)
-        classes = [ComputeLogProbsMixin, policy_cls] if lp_mixin else [policy_cls]
-        class MixedPolicy(RecurrentPolicyMixin, *classes): pass  # noqa
+        class MixedPolicy(DAggerPolicyMixin, policy_cls): pass  # noqa
         # fmt: on
         policy = MixedPolicy.from_config(
             self.config, self.observation_space, self.policy_action_space
@@ -148,38 +138,128 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         return policy
 
     def transform_observations(self, observations):
-        """Applied to the observations output of self.envs.step()"""
+        """Applied to the observations output of self.sift_env_outputs()"""
         batch = batch_obs(observations, device=self.device)
         batch = apply_obs_transforms_batch(batch, self.obs_transforms)
         return batch
 
     def sift_env_outputs(self, outputs):
-        """Applied to all outputs of self.envs.step()"""
-        observations, rewards_l, dones, infos = [list(x) for x in zip(*outputs)]
-        rewards = torch.tensor(rewards_l, dtype=torch.float, device="cpu").unsqueeze(1)
+        """Applied to outputs of self.envs.step()"""
+        observations, _, dones, infos = [list(x) for x in zip(*outputs)]
         dones = torch.tensor(dones, dtype=torch.bool, device=self.device)
-        self.masks = torch.logical_not(dones)
-        return observations, rewards, dones, infos
+        self.masks = torch.logical_not(dones).reshape(self.num_envs, 1)
+        return observations, None, dones, infos  # Don't need rewards for DAgger
 
     def get_teacher_actions(self, observations):
         """Applied to output of self.transform_observations(), sent to
         self.action_loss()"""
-        with inference_mode():
-            action = self.teacher.act(observations, self.prev_actions, self.masks)[1]
-        return action.clone()
+        actions = self.teacher.act(observations, self.prev_actions, self.masks)
+        return actions
 
     def get_student_actions(self, observations):
         """Applied to output of self.transform_observations(), sent to
         self.envs.step()"""
-        # Must clone observations to avoid inference tensor error
-        obs_clone = TensorDict({k: v.clone() for k, v in observations.items()})
-        if self.static_encoder:
-            with inference_mode():
-                visual_feats = self.actor_critic.net.visual_encoder(observations)
-            obs_clone[VISUAL_FEATURES_KEY] = visual_feats.clone()
-        _, actions, _ = self.actor_critic.act(obs_clone, self.prev_actions, self.masks)
+        actions = self.actor_critic.act(observations, self.prev_actions, self.masks)
         self.prev_actions.copy_(actions)  # noqa
         return actions
+
+    def initialize_rollout(self, observations):
+        ppo_cfg = self.config.habitat_baselines.rl.ppo
+        rollout_kwargs = dict(
+            numsteps=self.config.habitat_baselines.dagger.batch_length,
+            num_envs=self.envs.num_envs,
+            action_space=self.policy_action_space,
+            recurrent_hidden_state_size=ppo_cfg.hidden_size,
+            num_recurrent_layers=self.actor_critic.net.num_recurrent_layers,
+            is_double_buffered=False,
+            action_shape=self.action_shape,
+            discrete_actions=not self.continuous_actions,
+        )
+        if self.static_encoder:
+            rollout_cls = RolloutStorageNo2D
+            rollout_kwargs["initial_obs"] = observations
+            rollout_kwargs["visual_encoder"] = self.actor_critic.net.visual_encoder
+            rollout_kwargs["observation_space"] = spaces.Dict(
+                {
+                    PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
+                        low=np.finfo(np.float32).min,
+                        high=np.finfo(np.float32).max,
+                        shape=self.actor_critic.net.visual_encoder.output_shape,
+                        dtype=np.float32,
+                    ),
+                    **self.observation_space.spaces,
+                }
+            )
+        else:
+            rollout_cls = RolloutStorage
+            rollout_kwargs["observation_space"] = self.observation_space
+        self.rollouts = rollout_cls(**rollout_kwargs)
+        self.rollouts.to(self.device)
+        if not self.static_encoder:
+            self.rollouts.buffers["observations"][0] = observations
+
+    def update_rollout(self, observations, teacher_actions):
+        self.rollouts.insert(
+            next_observations=observations,
+            next_recurrent_hidden_states=self.actor_critic.rnn_hidden_states,
+            actions=teacher_actions,
+            next_masks=self.masks,
+        )
+        self.rollouts.advance_rollout()
+
+    def get_last_obs(self):
+        last_buff = self.rollouts.buffers[self.rollouts.current_rollout_step_idx]
+        return last_buff["observations"]
+
+    def update(self):
+        data_generator = self.rollouts.recurrent_generator(
+            advantages=None,
+            num_mini_batch=self.config.habitat_baselines.rl.ppo.num_mini_batch,
+        )
+        losses = []
+        for epoch in range(self.config.habitat_baselines.rl.ppo.ppo_epoch):
+            for batch in data_generator:
+                if self.config.habitat_baselines.dagger.loss_type == "log_prob":
+                    log_probs = self._with_grad(
+                        "evaluate_log_probs",
+                        batch["observations"],
+                        batch["recurrent_hidden_states"],
+                        batch["prev_actions"],
+                        batch["masks"],
+                        batch["actions"],
+                        batch["rnn_build_seq_info"],
+                    )
+                    loss = -log_probs.mean()
+                elif self.config.habitat_baselines.dagger.loss_type == "mse":
+                    # Assumes student has Categorical action distribution
+                    logits = -self._with_grad(
+                        "get_logits",
+                        batch["observations"],
+                        batch["recurrent_hidden_states"],
+                        batch["prev_actions"],
+                        batch["masks"],
+                        batch["rnn_build_seq_info"],
+                    )
+                    N = batch["recurrent_hidden_states"].shape[0]
+                    T = batch["actions"].shape[0] // N
+                    actions_batch = batch["actions"].view(T, N, -1)
+                    logits = logits.view(T, N, -1)
+                    loss = F.cross_entropy(
+                        logits.permute(0, 2, 1), actions_batch.squeeze(-1)
+                    )
+                else:
+                    raise ValueError(
+                        "Invalid loss type:"
+                        f"{self.config.habitat_baselines.dagger.loss_type}"
+                    )
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                losses.append(loss.item())
+
+        self.rollouts.after_update()
+        mean_loss = np.mean(losses)
+        return mean_loss
 
     def step_envs(self, actions):
         if self.continuous_actions:
@@ -188,77 +268,20 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         actions = [a.item() for a in actions.cpu()]
         return super().step_envs(actions)
 
-    @classmethod
-    def _extract_scalars_from_infos(cls, infos) -> Dict[str, List[float]]:
-        return PPOTrainer._extract_scalars_from_infos(infos)  # noqa
-
-    def _all_reduce(self, t: torch.Tensor) -> torch.Tensor:
-        return PPOTrainer._all_reduce(self, t)  # noqa
-
-    def update_metrics(self, observations, rewards, dones, infos, action_loss):
-        scalar_infos = self._extract_scalars_from_infos(infos)
-        for k, scalar_list in scalar_infos.items():
-            for idx, s in enumerate(scalar_list):
-                if dones[idx]:
-                    self.window_episode_stats[k].append(s)
-        if action_loss is not None:
-            self.loss_deque.append(action_loss.item())
-
-        # Only synchronize + log stats on log interval
-        if (
-            self.num_train_iter % self.batch_length == 0
-            and self.num_updates_done % self.config.habitat_baselines.log_interval == 0
-        ):
-            mean_stats = {
-                k: torch.tensor(np.mean(v) if len(v) > 0 else 0.0)
-                for k, v in self.window_episode_stats.items()
-            }
-            mean_loss = np.mean(self.loss_deque) if len(self.loss_deque) > 0 else 0.0
-            stats_ordering = sorted(self.window_episode_stats.keys())
-            mean_stats = torch.stack(
-                [mean_stats[k] for k in stats_ordering] + [torch.tensor(mean_loss)], 0
-            )
-            mean_stats = self._all_reduce(mean_stats)
-
-            if not rank0_only():
-                return  # only rank 0 should move on to log/tensorboard/checkpoint
-
-            if self.num_workers > 1:
-                mean_stats /= self.num_workers
-
-            log_time = time.time() - self.last_log_time
-            fps = (
-                self.num_workers
-                * self.num_envs
-                * self.batch_length
-                * self.config.habitat_baselines.log_interval
-            ) / log_time
-            self.last_log_time = time.time()
-            metrics = {k: mean_stats[idx] for idx, k in enumerate(stats_ordering)}
-            total_steps = self.num_steps_done * self.num_workers
-            names = [("", total_steps), ("_per_update", self.num_updates_done)]
-            for name, x in names:
-                for k, v in metrics.items():
-                    self.writer.add_scalar(f"metrics{name}/{k}", v, x)
-                self.writer.add_scalar(f"learner{name}/loss", mean_stats[-1], x)
-                self.writer.add_scalar(f"perf{name}/fps", fps, x)
-
-            logger.info(
-                f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
-                f"{total_steps}\tavg loss: {mean_stats[-1]:.3f}"
-            )
-            window_scalars = []
-            for idx, k in enumerate(stats_ordering):
-                window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
-            logger.info("  ".join(window_scalars))
-
-            if self.should_save_now():
-                checkpoint, ckpt_path = self.generate_checkpoint()
-                checkpoint["config"] = self.config
-                torch.save(checkpoint, ckpt_path)
+    def log_data(self, mean_loss):
+        fps, mean_stats, stats_ordering = super().log_data(mean_loss)
+        total_steps = self.num_steps_done * self.num_workers
+        logger.info(
+            f"update: {self.num_updates_done}\tfps: {fps:.3f}\tsteps: "
+            f"{total_steps}\tavg loss: {mean_stats[-1]:.3f}"
+        )
+        window_scalars = []
+        for idx, k in enumerate(stats_ordering):
+            window_scalars.append(f"{k}: {mean_stats[idx]:.3f}")
+        logger.info("  ".join(window_scalars))
 
     def distribute_gpus(self):
-        if self._is_distributed:
+        if get_distrib_size()[2] > 1:
             local_rank, tcp_store = init_distrib_slurm(
                 self.config.habitat_baselines.rl.ddppo.distrib_backend
             )
@@ -303,11 +326,6 @@ class DAggerTrainer(DAggerDDP, BaseTrainer):  # noqa
         optimizer = optim_cls(**optim_kwargs)
         return optimizer
 
-    def train_setup(self):
-        observations = super().train_setup()
-        self.last_log_time = time.time()
-        return observations
-
 
 @dataclass
 class DAggerConfig(HabitatBaselinesBaseConfig):
@@ -320,6 +338,7 @@ class DAggerConfig(HabitatBaselinesBaseConfig):
     teacher_policy: PolicyConfig = PolicyConfig()
     total_num_steps: float = 1e6
     updates_per_ckpt: int = 100
+    loss_type: str = "log_prob"
 
 
 @dataclass
