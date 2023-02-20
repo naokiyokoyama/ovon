@@ -121,7 +121,6 @@ class PointNavResNetCLIPNet(Net):
         self._n_prev_action = 32
         rnn_input_size = self._n_prev_action  # test
 
-        # Re-define (overwrite) the visual_encoder attribute from ResNet to CLIP
         self.visual_encoder = ResNetCLIPEncoder(
             observation_space,
             pooling="avgpool" if "avgpool" in backbone else "attnpool",
