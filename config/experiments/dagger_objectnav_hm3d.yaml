@@ -5,6 +5,7 @@ defaults:
   - /habitat_baselines/rl/policy/obs_transforms:
     - center_cropper_base
     - resize_shortest_edge_base
+    - relabel_teacher_actions
   - /habitat/task/lab_sensors:
     - objnav_explorer
   - /habitat/task/measurements:
@@ -48,6 +49,9 @@ habitat_baselines:
 
     policy:
       name: "PointNavResNetCLIPPolicy"
+      obs_transforms:
+        relabel_teacher_actions:
+          teacher_label: "objnav_explorer"
 
     ppo:
       # ppo params

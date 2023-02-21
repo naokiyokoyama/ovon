@@ -19,6 +19,8 @@ from habitat_baselines.rl.ppo.policy import NetPolicy
 from habitat_baselines.rl.ver.ver_rollout_storage import VERRolloutStorage
 from habitat_baselines.utils.common import LagrangeInequalityCoefficient, inference_mode
 
+from ovon.obs_transformers.relabel_teacher_actions import RelabelTeacherActions
+
 EPS_PPO = 1e-5
 
 
@@ -122,10 +124,10 @@ class DAgger(PPO):
 
             for _bid, batch in enumerate(data_generator):
                 self._set_grads_to_none()
-                # TODO: create an observation transformer that renames sensor to teacher_action
-                teacher_actions = batch["observations"]["objnav_explorer"].type(
-                    torch.long
-                )
+                # TODO: see if casting from torch.uint8 to long is necessary
+                teacher_actions = batch["observations"][
+                    RelabelTeacherActions.TEACHER_LABEL
+                ].type(torch.long)
                 log_probs = self._evaluate_actions(
                     batch["observations"],
                     batch["recurrent_hidden_states"],
