@@ -6,11 +6,15 @@ import habitat
 import habitat_sim
 from habitat.config import read_write
 from habitat.config.default import get_config
-from habitat.config.default_structured_configs import \
-    HabitatSimSemanticSensorConfig
+from habitat.config.default_structured_configs import HabitatSimSemanticSensorConfig
 from habitat.utils.visualizations import maps
-from ovon.utils.utils import (draw_bounding_box, draw_point, is_on_same_floor,
-                              load_dataset)
+
+from ovon.utils.utils import (
+    draw_bounding_box,
+    draw_point,
+    is_on_same_floor,
+    load_dataset,
+)
 
 SCENES_ROOT = "data/scene_datasets/hm3d"
 MAP_RESOLUTION = 512
@@ -41,7 +45,9 @@ def get_objnav_config(scene):
 
 
 def get_sim(objnav_config):
-    sim = habitat.sims.make_sim("Sim-v0", config=objnav_config.habitat.simulator)
+    sim = habitat.sims.make_sim(
+        "Sim-v0", config=objnav_config.habitat.simulator
+    )
 
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()
@@ -51,7 +57,9 @@ def get_sim(objnav_config):
     navmesh_settings.agent_height = (
         objnav_config.habitat.simulator.agents.main_agent.height
     )
-    sim.recompute_navmesh(sim.pathfinder, navmesh_settings, include_static_objects=True)
+    sim.recompute_navmesh(
+        sim.pathfinder, navmesh_settings, include_static_objects=True
+    )
 
     return sim
 
@@ -93,10 +101,12 @@ def visualize_episodes(sim, dataset, object_category):
         )
 
     for goal_category, goals in goals_by_category.items():
+        print(goal_category, object_category)
         if object_category in goal_category:
+            print("in Here, ", goals)
             for goal in goals:
-                if not is_on_same_floor(goal["position"][1], ref_floor_height):
-                    continue
+                # if not is_on_same_floor(goal["position"][1], ref_floor_height):
+                #     continue
                 top_down_map = draw_point(
                     sim,
                     top_down_map,
@@ -128,7 +138,13 @@ def save_visual(img, path):
 def visualize(episodes_path, output_path):
     dataset = load_dataset(episodes_path)
     sim = setup(dataset["episodes"][0]["scene_id"])
-    top_down_map = visualize_episodes(sim, dataset, object_category="bed")
+    categories = dataset["goals_by_category"].keys()
+    for category in categories:
+        print(category)
+        top_down_map = visualize_episodes(
+            sim, dataset, object_category=category.split("_")[1]
+        )
+        break
     save_visual(top_down_map, output_path)
 
 

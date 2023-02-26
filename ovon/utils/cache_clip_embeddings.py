@@ -3,6 +3,7 @@ import argparse
 import clip
 import numpy as np
 import torch
+
 from ovon.utils.utils import load_json, save_pickle, write_json
 
 PROMPT = "Find and goto {category}"
@@ -32,7 +33,7 @@ def cache_embeddings(categories_file_path, output_path, clip_model="RN50"):
     with torch.no_grad():
         print(batch.shape)
         text_embedding = model.encode_text(batch.flatten(0, 1)).float()
-        text_embedding /= text_embedding.norm(dim=-1, keepdim=True)
+        # text_embedding /= text_embedding.norm(dim=-1, keepdim=True)
     save_to_disk(text_embedding, goal_categories, output_path)
 
 
