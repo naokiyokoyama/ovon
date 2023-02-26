@@ -4,18 +4,21 @@ from typing import Dict, List, Optional, Tuple
 import clip
 import torch
 from gym import spaces
+from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import \
-    build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import (
+    build_rnn_state_encoder,
+)
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
-from ovon.task.sensors import ClipObjectGoalSensor
 from torch import nn as nn
 from torch.nn import functional as F
 from torchvision import transforms as T
 from torchvision.transforms import functional as TF
+
+from ovon.task.sensors import ClipObjectGoalSensor
 
 
 @baseline_registry.register_policy
@@ -35,8 +38,12 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         **kwargs,
     ):
         if policy_config is not None:
-            discrete_actions = policy_config.action_distribution_type == "categorical"
-            self.action_distribution_type = policy_config.action_distribution_type
+            discrete_actions = (
+                policy_config.action_distribution_type == "categorical"
+            )
+            self.action_distribution_type = (
+                policy_config.action_distribution_type
+            )
         else:
             discrete_actions = True
             self.action_distribution_type = "categorical"
@@ -76,7 +83,11 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             )
         filtered_obs = spaces.Dict(
             OrderedDict(
-                ((k, v) for k, v in observation_space.items() if k not in ignore_names)
+                (
+                    (k, v)
+                    for k, v in observation_space.items()
+                    if k not in ignore_names
+                )
             )
         )
         return cls(
@@ -117,7 +128,9 @@ class PointNavResNetCLIPNet(Net):
             )
         else:
             num_actions = get_num_actions(action_space)
-            self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
+            self.prev_action_embedding = nn.Linear(
+                num_actions, self._n_prev_action
+            )
         self._n_prev_action = 32
         rnn_input_size = self._n_prev_action  # test
 
@@ -131,16 +144,40 @@ class PointNavResNetCLIPNet(Net):
                 nn.Linear(self.visual_encoder.output_shape[0], hidden_size),
                 nn.ReLU(True),
             )
+        print("Obs space: {}".format(observation_space.spaces))
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
-                int(observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]) + 1
+                int(
+                    observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
+                )
+                + 1
             )
-            self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
+            self.obj_categories_embedding = nn.Embedding(
+                self._n_object_categories, 32
+            )
             rnn_input_size += 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
             rnn_input_size += 1024 if clip_model == "RN50" else 768
+
+        if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
+            input_gps_dim = observation_space.spaces[
+                EpisodicGPSSensor.cls_uuid
+            ].shape[0]
+            self.gps_embedding = nn.Linear(input_gps_dim, 32)
+            rnn_input_size += 32
+
+        if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
+            assert (
+                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
+                    0
+                ]
+                == 1
+            ), "Expected compass with 2D rotation."
+            input_compass_dim = 2  # cos and sin of the angle
+            self.compass_embedding = nn.Linear(input_compass_dim, 32)
+            rnn_input_size += 32
 
         self._hidden_size = hidden_size
 
@@ -183,7 +220,8 @@ class PointNavResNetCLIPNet(Net):
             # We CANNOT use observations.get() here because self.visual_encoder(observations)
             # is an expensive operation. Therefore, we need `# noqa: SIM401`
             if (  # noqa: SIM401
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
+                in observations
             ):
                 visual_feats = observations[
                     PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
@@ -200,8 +238,27 @@ class PointNavResNetCLIPNet(Net):
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
         if ClipObjectGoalSensor.cls_uuid in observations:
-            object_goal = observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
+            object_goal = (
+                observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
+            )
             x.append(object_goal)
+
+        if EpisodicCompassSensor.cls_uuid in observations:
+            compass_observations = torch.stack(
+                [
+                    torch.cos(observations[EpisodicCompassSensor.cls_uuid]),
+                    torch.sin(observations[EpisodicCompassSensor.cls_uuid]),
+                ],
+                -1,
+            )
+            x.append(
+                self.compass_embedding(compass_observations.squeeze(dim=1))
+            )
+
+        if EpisodicGPSSensor.cls_uuid in observations:
+            x.append(
+                self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
+            )
 
         prev_actions = prev_actions.squeeze(-1)
         start_token = torch.zeros_like(prev_actions)
@@ -223,7 +280,10 @@ class PointNavResNetCLIPNet(Net):
 
 class ResNetCLIPEncoder(nn.Module):
     def __init__(
-        self, observation_space: spaces.Dict, pooling="attnpool", clip_model="RN50"
+        self,
+        observation_space: spaces.Dict,
+        pooling="attnpool",
+        clip_model="RN50",
     ):
         super().__init__()
 
@@ -299,7 +359,9 @@ class ResNetCLIPEncoder(nn.Module):
             )  # [BATCH x 3 x HEIGHT X WIDTH]
             ddd = torch.stack(
                 [
-                    self.preprocess(TF.convert_image_dtype(depth_map, torch.uint8))
+                    self.preprocess(
+                        TF.convert_image_dtype(depth_map, torch.uint8)
+                    )
                     for depth_map in ddd
                 ]
             )  # [BATCH x CHANNEL x HEIGHT X WIDTH] in torch.float32
