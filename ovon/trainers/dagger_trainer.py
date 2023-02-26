@@ -2,6 +2,7 @@ import copy
 import os
 import random
 import time
+from dataclasses import dataclass
 from typing import List
 
 import numpy as np
@@ -16,6 +17,7 @@ from habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_obs_space,
     get_active_obs_transforms,
 )
+from habitat_baselines.config.default_structured_configs import PolicyConfig
 from habitat_baselines.rl.ddppo.ddp_utils import (
     add_signal_handlers,
     get_distrib_size,
@@ -26,6 +28,7 @@ from habitat_baselines.rl.ddppo.ddp_utils import (
     rank0_only,
 )
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet  # noqa: F401.
+from habitat_baselines.rl.ppo import Policy
 from habitat_baselines.rl.ver.environment_worker import (
     build_action_plugin_from_policy_action_space,
     construct_environment_workers,
@@ -66,6 +69,14 @@ except AttributeError:
 @baseline_registry.register_trainer(name="ver_il")
 class VERDAggerTrainer(VERTrainer):
     def __init__(self, config: DictConfig):
+        keys = config.habitat_baselines.rl.policy.keys()
+        keys = [k for k in keys if k != "hierarchical_policy"]
+        kwargs = {k: config.habitat_baselines.rl.policy[k] for k in keys}
+        with read_write(config):
+            config.habitat_baselines.rl.policy = DAggerPolicyConfig(
+                **kwargs, original_name=config.habitat_baselines.rl.policy.name
+            )
+            config.habitat_baselines.rl.policy.name = DAggerPolicy.__name__
         super().__init__(config)
         self.teacher_forcing = config.habitat_baselines.trainer_name == "ver_il"
 
@@ -385,16 +396,13 @@ class VERDAggerTrainer(VERTrainer):
         policy = baseline_registry.get_policy(
             self.config.habitat_baselines.rl.policy.name
         )
-        # fmt: off
-        class MixedPolicy(DAggerPolicyMixin, policy): pass  # noqa
-        # fmt: on
         observation_space = self.obs_space
         self.obs_transforms = get_active_obs_transforms(self.config)
         observation_space = apply_obs_transforms_obs_space(
             observation_space, self.obs_transforms
         )
 
-        self.actor_critic = MixedPolicy.from_config(
+        self.actor_critic = policy.from_config(
             self.config,
             observation_space,
             self.policy_action_space,
@@ -441,3 +449,29 @@ class VERDAggerTrainer(VERTrainer):
         self.agent = (DDPDAgger if self._is_distributed else DAgger).from_config(
             self.actor_critic, ppo_cfg
         )
+
+
+@baseline_registry.register_policy
+class DAggerPolicy(Policy):
+    @classmethod
+    def from_config(
+        cls,
+        config: "DictConfig",
+        observation_space: spaces.Dict,
+        action_space,
+        **kwargs,
+    ):
+        original_cls = baseline_registry.get_policy(
+            config.habitat_baselines.rl.policy.original_name
+        )
+        # fmt: off
+        class MixedPolicy(DAggerPolicyMixin, original_cls): pass  # noqa
+        # fmt: on
+        return MixedPolicy.from_config(
+            config, observation_space, action_space, **kwargs
+        )
+
+
+@dataclass
+class DAggerPolicyConfig(PolicyConfig):
+    original_name: str = ""
