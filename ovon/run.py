@@ -41,10 +41,16 @@ def main():
         "--debug",
         "-d",
         action="store_true",
-        help="Saves files to $JUNK directory and ignore resume state.",
+        help="Saves files to $JUNK directory and ignores resume state.",
     )
     parser.add_argument(
         "--single-env", "-s", action="store_true", help="Sets num_environments=1."
+    )
+    parser.add_argument(
+        "--debug-datapath",
+        "-p",
+        action="store_true",
+        help="Uses faster-to-load $OVON_DEBUG_DATAPATH episode dataset for debugging.",
     )
     parser.add_argument(
         "--blind", "-b", action="store_true", help="If set, no cameras will be used."
@@ -75,7 +81,7 @@ def edit_config(config, args):
             f"(Current value: {os.environ['JUNK']})"
         )
 
-        # Remove resume state if training
+        # Remove resume state in junk folder if training, so we don't resume from it
         resume_state_path = osp.join(os.environ["JUNK"], ".habitat-resume-state.pth")
         if args.run_type == "train" and osp.isfile(resume_state_path):
             print("Removing junk resume state file:", osp.abspath(resume_state_path))
@@ -86,6 +92,10 @@ def edit_config(config, args):
         config.habitat_baselines.checkpoint_folder = os.environ["JUNK"]
         config.habitat_baselines.log_file = osp.join(os.environ["JUNK"], "junk.log")
         config.habitat_baselines.load_resume_state_config = False
+
+    if args.debug_datapath and "OVON_DEBUG_DATAPATH" in os.environ:
+        # Use a different, much faster to load data path for debugging
+        config.habitat.dataset.data_path = os.environ["OVON_DEBUG_DATAPATH"]
 
     if args.single_env:
         config.habitat_baselines.num_environments = 1
