@@ -56,6 +56,8 @@ class DAgger(PPO):
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
 
+        self.inflection_weight = 2.11
+
         self.device = next(actor_critic.parameters()).device
 
         if (
@@ -136,7 +138,16 @@ class DAgger(PPO):
                     teacher_actions,
                     batch["rnn_build_seq_info"],
                 )
-                loss = -log_probs.mean()
+                if "inflection" in batch["observations"]:
+                    inflection_weights = torch.where(
+                        batch["observations"]["inflection"] == 1,
+                        torch.ones_like(batch["observations"]["inflection"])
+                        * self.inflection_weight,
+                        torch.ones_like(batch["observations"]["inflection"]),
+                    )
+                    loss = -(log_probs * inflection_weights).mean()
+                else:
+                    loss = -log_probs.mean()
 
                 if "is_coeffs" in batch:
                     assert isinstance(batch["is_coeffs"], torch.Tensor)
