@@ -11,7 +11,6 @@ mamba activate $conda_env_name
 pip install -e .
 
 # Install distributed_dagger and frontier_exploration
-cd distributed_dagger && pip install -e . && cd ..
 cd frontier_exploration && pip install -e . && cd ..
 
 # Install habitat-lab
