@@ -21,4 +21,4 @@ export MAIN_ADDR
 
 srun python ovon/dataset/objectnav_generator.py \
   --split val \
-  --num-scenes 
+  --num-scenes 20
