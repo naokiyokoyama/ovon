@@ -6,18 +6,29 @@
 
 import collections
 import inspect
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Dict, Optional, Union
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
+from gym import spaces
 from habitat.utils import profiling_wrapper
+from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.rollout_storage import RolloutStorage
+from habitat_baselines.config.default_structured_configs import PolicyConfig
 from habitat_baselines.rl.ddppo.algo.ddppo import DecentralizedDistributedMixin
-from habitat_baselines.rl.ppo import PPO
+from habitat_baselines.rl.ddppo.policy import PointNavResNetNet  # noqa: F401.
+from habitat_baselines.rl.ppo import PPO, Policy
 from habitat_baselines.rl.ppo.policy import NetPolicy
 from habitat_baselines.rl.ver.ver_rollout_storage import VERRolloutStorage
-from habitat_baselines.utils.common import LagrangeInequalityCoefficient, inference_mode
+from habitat_baselines.utils.common import (
+    CategoricalNet,
+    GaussianNet,
+    LagrangeInequalityCoefficient,
+    inference_mode,
+)
+from omegaconf import DictConfig
+from torch import nn
 
 from ovon.obs_transformers.relabel_teacher_actions import RelabelTeacherActions
 
@@ -210,3 +221,96 @@ class DAgger(PPO):
 
 class DDPDAgger(DecentralizedDistributedMixin, DAgger):
     pass
+
+
+class DAggerPolicyMixin:
+    """Avoids computing value or action_log_probs, which are RL-only, and
+    .evaluate_actions() will be overridden to produce the correct gradients. The critic
+    is also removed so that find_unused_parameters can be set to False for DDP."""
+
+    action_distribution: Union[CategoricalNet, GaussianNet]
+    critic: nn.Module
+    net: nn.Module
+    action_distribution_type: str
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        del self.critic
+
+    @property
+    def policy_components(self):
+        """Same except critic weights are not included."""
+        return self.net, self.action_distribution
+
+    def act(
+        self, observations, rnn_hidden_states, prev_actions, masks, deterministic=False
+    ):
+        """Skips computing values and action_log_probs, which are RL-only."""
+        features, rnn_hidden_states, _ = self.net(
+            observations, rnn_hidden_states, prev_actions, masks
+        )
+        distribution = self.action_distribution(features)
+
+        with torch.no_grad():
+            if deterministic:
+                if self.action_distribution_type == "categorical":
+                    action = distribution.mode()
+                elif self.action_distribution_type == "gaussian":
+                    action = distribution.mean
+                else:
+                    raise NotImplementedError(
+                        "Distribution type {} is not supported".format(
+                            self.action_distribution_type
+                        )
+                    )
+            else:
+                action = distribution.sample()
+        n = action.shape[0]
+        value = torch.zeros(n, 1, device=action.device)
+        action_log_probs = torch.zeros(n, 1, device=action.device)
+        return value, action, action_log_probs, rnn_hidden_states
+
+    def evaluate_actions(
+        self,
+        observations,
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        action,
+        rnn_build_seq_info,
+    ):
+        """Given a state and action, computes the policy's action distribution for that
+        state and then returns the log probability of the given action under this
+        distribution."""
+        features, _, _ = self.net(
+            observations, rnn_hidden_states, prev_actions, masks, rnn_build_seq_info
+        )
+        distribution = self.action_distribution(features)
+        log_probs = distribution.log_probs(action)
+        return log_probs
+
+
+@baseline_registry.register_policy
+class DAggerPolicy(Policy):
+    @classmethod
+    def from_config(
+        cls,
+        config: "DictConfig",
+        observation_space: spaces.Dict,
+        action_space,
+        **kwargs,
+    ):
+        original_cls = baseline_registry.get_policy(
+            config.habitat_baselines.rl.policy.original_name
+        )
+        # fmt: off
+        class MixedPolicy(DAggerPolicyMixin, original_cls): pass  # noqa
+        # fmt: on
+        return MixedPolicy.from_config(
+            config, observation_space, action_space, **kwargs
+        )
+
+
+@dataclass
+class DAggerPolicyConfig(PolicyConfig):
+    original_name: str = ""

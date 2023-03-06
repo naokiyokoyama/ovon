@@ -2,7 +2,6 @@ import copy
 import os
 import random
 import time
-from dataclasses import dataclass
 from typing import List
 
 import numpy as np
@@ -17,7 +16,6 @@ from habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_obs_space,
     get_active_obs_transforms,
 )
-from habitat_baselines.config.default_structured_configs import PolicyConfig
 from habitat_baselines.rl.ddppo.ddp_utils import (
     add_signal_handlers,
     get_distrib_size,
@@ -28,7 +26,6 @@ from habitat_baselines.rl.ddppo.ddp_utils import (
     rank0_only,
 )
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet  # noqa: F401.
-from habitat_baselines.rl.ppo import Policy
 from habitat_baselines.rl.ver.environment_worker import (
     build_action_plugin_from_policy_action_space,
     construct_environment_workers,
@@ -52,10 +49,8 @@ from habitat_baselines.utils.common import (
     is_continuous_action_space,
 )
 from omegaconf import DictConfig
-from torch import nn
 
-from ovon.algos.dagger import DAgger, DDPDAgger
-from ovon.models.model_utils import DAggerPolicyMixin
+from ovon.algos.dagger import DAgger, DAggerPolicy, DAggerPolicyConfig, DDPDAgger
 from ovon.utils.dagger_environment_worker import construct_il_environment_workers
 
 try:
@@ -298,7 +293,7 @@ class VERDAggerTrainer(VERTrainer):
         self.actor_critic.share_memory()
 
         if self._is_distributed:
-            self.agent.init_distributed(find_unused_params=True)
+            self.agent.init_distributed(find_unused_params=False)
 
         logger.info(
             "agent number of parameters: {}".format(
@@ -383,7 +378,8 @@ class VERDAggerTrainer(VERTrainer):
     def _setup_actor_critic_agent(self, ppo_cfg: "DictConfig") -> None:
         r"""Same as PPOTrainer._setup_actor_critic_agent but mixes the policy class with
         DAgger mixin so that evaluate_actions induces the correct gradients, and allows
-        the usage of DAgger agent instead of DDPPO or PPO.
+        the usage of DAgger agent instead of DDPPO or PPO. Also the critic is gone, so
+        we don't need to reset it.
 
         Args:
             ppo_cfg: config node with relevant params
@@ -442,36 +438,6 @@ class VERDAggerTrainer(VERTrainer):
             for param in self.actor_critic.net.visual_encoder.parameters():
                 param.requires_grad_(False)
 
-        if self.config.habitat_baselines.rl.ddppo.reset_critic:
-            nn.init.orthogonal_(self.actor_critic.critic.fc.weight)
-            nn.init.constant_(self.actor_critic.critic.fc.bias, 0)
-
         self.agent = (DDPDAgger if self._is_distributed else DAgger).from_config(
             self.actor_critic, ppo_cfg
         )
-
-
-@baseline_registry.register_policy
-class DAggerPolicy(Policy):
-    @classmethod
-    def from_config(
-        cls,
-        config: "DictConfig",
-        observation_space: spaces.Dict,
-        action_space,
-        **kwargs,
-    ):
-        original_cls = baseline_registry.get_policy(
-            config.habitat_baselines.rl.policy.original_name
-        )
-        # fmt: off
-        class MixedPolicy(DAggerPolicyMixin, original_cls): pass  # noqa
-        # fmt: on
-        return MixedPolicy.from_config(
-            config, observation_space, action_space, **kwargs
-        )
-
-
-@dataclass
-class DAggerPolicyConfig(PolicyConfig):
-    original_name: str = ""
