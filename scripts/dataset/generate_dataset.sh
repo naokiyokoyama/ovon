@@ -2,9 +2,9 @@
 #SBATCH --job-name=ovon
 #SBATCH --output=slurm_logs/dataset-%j.out
 #SBATCH --error=slurm_logs/dataset-%j.err
-#SBATCH --gpus 4
+#SBATCH --gpus 2
 #SBATCH --nodes 1
-#SBATCH --cpus-per-task 10
+#SBATCH --cpus-per-task 16
 #SBATCH --ntasks-per-node 1
 #SBATCH --constraint=a40
 #SBATCH --partition=short
@@ -19,5 +19,6 @@ export MAGNUM_LOG=quiet
 MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
 export MAIN_ADDR
 
-srun python ovon/dataset/generate_objectnav_dataset.py \
-  --split train \
+srun python ovon/dataset/objectnav_generator.py \
+  --split val \
+  --num-scenes 20

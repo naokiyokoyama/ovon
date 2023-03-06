@@ -134,7 +134,7 @@ class PoseSampler:
                         np.deg2rad(deg), habitat_sim.geo.GRAVITY
                     )
 
-                poses.append(AgentState(position=pos, rotation=rot))
+                poses.append((AgentState(position=pos, rotation=rot), r))
 
         return poses
 

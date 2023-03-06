@@ -17,3 +17,6 @@ data/
 tb/
 train.log
 slurm_logs/
+
+# scripts
+scripts/

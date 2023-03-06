@@ -1,5 +1,8 @@
+import csv
 import json
 import os
+import pickle
+from collections import defaultdict
 from collections.abc import MutableMapping
 from typing import Dict, Iterable, Optional, Set
 
@@ -9,19 +12,83 @@ class ObjectCategoryMapping(MutableMapping):
     _mapping: Dict[str, str]
 
     def __init__(
-        self, allowed_categories_file: str, allowed_categories: Optional[Set[str]] = None
+        self,
+        mapping_file: str,
+        allowed_categories: Optional[Set[str]] = None,
+        coverage_meta_file: Optional[str] = None,
+        frame_coverage_threshold: Optional[float] = None,
     ) -> None:
         self._mapping = self.limit_mapping(
-            self.load_categories(allowed_categories_file), allowed_categories
+            self.load_categories(
+                mapping_file, coverage_meta_file, frame_coverage_threshold
+            ),
+            allowed_categories,
         )
 
     @staticmethod
-    def load_categories(allow_categories_file: str) -> Dict[str, str]:
-        mapping = {}
+    def load_categories(
+        mapping_file: str,
+        coverage_meta_file: str,
+        frame_coverage_threshold: float,
+        filter_attributes: Optional[Set[str]] = [
+            "ceiling",
+            "door",
+            "floor",
+            "object ",
+            "wall",
+            "unknown",
+            "device",
+            "decoration",
+        ],
+    ) -> Dict[str, str]:
 
-        all_categories = json.load(open(allow_categories_file, "r"))
-        for category in all_categories:
-            mapping[category] = category
+        # Filter based on coverage
+        file = open(coverage_meta_file, "rb")
+        coverage_metadata = pickle.load(file)
+
+        coverage_metadata_dict = defaultdict(list)
+        for category, coverage_meta in coverage_metadata.items():
+            for frame_coverage, _, scene in coverage_meta:
+                if frame_coverage >= frame_coverage_threshold:
+                    coverage_metadata_dict[category].append(frame_coverage)
+
+        mapping = {}
+        threshold_filtering = 0
+        attr_filtering = 0
+        with open(mapping_file, "r") as tsv_file:
+            tsv_reader = csv.reader(tsv_file, delimiter="\t")
+            is_first_row = True
+            for row in tsv_reader:
+                if is_first_row:
+                    is_first_row = False
+                    continue
+                raw_name = row[1]
+                raw_cat_name = row[2]
+
+                ignore_category = False
+                for attribute in filter_attributes:
+                    if attribute in raw_cat_name.lower():
+                        ignore_category = True
+                        attr_filtering += 1
+                        break
+
+                if len(coverage_metadata_dict[raw_name]) < 1:
+                    threshold_filtering += 1
+                    ignore_category = True
+
+                if "otherroom" in raw_cat_name.lower():
+                    raw_cat_name = raw_cat_name.split("/")[0].strip()
+
+                if ignore_category:
+                    continue
+                mapping[raw_name] = raw_cat_name
+
+        print(
+            "Post filtering stats - Threshold filtering: {}, Ignore category: {}, Final: {}".format(
+                threshold_filtering, attr_filtering, len(mapping.keys())
+            )
+        )
+
         return mapping
 
     @staticmethod
@@ -74,7 +141,9 @@ def get_hm3d_semantic_scenes(
     semantic_scenes = {}  # split -> scene file path
     for split in splits:
         split_dir = os.path.join(hm3d_dataset_dir, split)
-        all_scenes = [os.path.join(split_dir, s) for s in os.listdir(split_dir)]
+        all_scenes = [
+            os.path.join(split_dir, s) for s in os.listdir(split_dir)
+        ]
         all_scenes = [s for s in all_scenes if include_scene(s)]
         scene_paths = {os.path.join(s, get_basis_file(s)) for s in all_scenes}
         semantic_scenes[split] = scene_paths
