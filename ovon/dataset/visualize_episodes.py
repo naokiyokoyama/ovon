@@ -6,7 +6,9 @@ import habitat
 import habitat_sim
 from habitat.config import read_write
 from habitat.config.default import get_config
-from habitat.config.default_structured_configs import HabitatSimSemanticSensorConfig
+from habitat.config.default_structured_configs import (
+    HabitatSimSemanticSensorConfig,
+)
 from habitat.utils.visualizations import maps
 
 from ovon.utils.utils import (
@@ -101,12 +103,10 @@ def visualize_episodes(sim, dataset, object_category):
         )
 
     for goal_category, goals in goals_by_category.items():
-        print(goal_category, object_category)
         if object_category in goal_category:
-            print("in Here, ", goals)
             for goal in goals:
-                # if not is_on_same_floor(goal["position"][1], ref_floor_height):
-                #     continue
+                if not is_on_same_floor(goal["position"][1], ref_floor_height):
+                    continue
                 top_down_map = draw_point(
                     sim,
                     top_down_map,
