@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import habitat_sim
 import numpy as np
@@ -12,7 +12,6 @@ EPS_ARRAY = np.array([1e-5, 0.0, 1e-5])
 
 
 class PoseSampler:
-
     sim: Simulator
     radius_min: float
     radius_max: float
@@ -57,9 +56,9 @@ class PoseSampler:
             np_rng = np.random.default_rng(4)
         self.np_rng = np_rng
 
-    def _get_floor_height(self, aabb: BBox) -> float:
+    def _get_floor_height(self, search_center: np.ndarray) -> float:
         """Floor height estimation: snap the bbox centroid to the navmesh"""
-        point = np.asarray(aabb.center)[:, None]
+        point = np.asarray(search_center)[:, None]
         snapped = self.sim.pathfinder.snap_point(point)
 
         # the centroid should not be lower than the floor
@@ -86,14 +85,17 @@ class PoseSampler:
 
         return snapped, valid
 
-    def sample_agent_poses_radially(self, obj: SemanticObject) -> List[AgentState]:
+    def sample_agent_poses_radially(
+        self,
+        search_center: np.ndarray = None,
+    ) -> List[AgentState]:
         """Generates AgentState.position and AgentState.rotation for all
         navigable agent poses given a radial sampling method about the
-        centroid of an object.
+        search_center.
         """
-        floor_height = self._get_floor_height(obj.aabb)
-        obj_loc = obj.aabb.center
-        search_center = np.array([obj_loc[0], floor_height, obj_loc[2]])
+
+        floor_height = self._get_floor_height(search_center)
+        search_center = np.array([search_center[0], floor_height, search_center[2]])
 
         poses: List[AgentState] = []
 
@@ -134,7 +136,7 @@ class PoseSampler:
                         np.deg2rad(deg), habitat_sim.geo.GRAVITY
                     )
 
-                poses.append((AgentState(position=pos, rotation=rot), r))
+                poses.append(AgentState(position=pos, rotation=rot))
 
         return poses
 

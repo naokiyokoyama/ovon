@@ -3,9 +3,18 @@ from typing import Dict, List
 
 import cv2
 import numpy as np
+import torch
+from habitat.tasks.utils import compute_pixel_coverage
+from habitat_sim._ext.habitat_sim_bindings import SemanticObject
+from habitat_sim.agent.agent import AgentState
+from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import d3_40_colors_rgb
 from numpy import ndarray
+from ovon.dataset.pose_sampler import PoseSampler
 from PIL import Image
+from torchvision.ops import masks_to_boxes
+from torchvision.transforms import PILToTensor, ToPILImage
+from torchvision.utils import draw_bounding_boxes
 
 IMAGE_DIR = "data/images/ovon_dataset_gen/debug"
 MAX_DIST = [0, 0, 200]  # Blue
@@ -48,3 +57,60 @@ def save_candidate_imgs(
         img = cv2.putText(img, txt, loc, font, 1, b, 4, lt)
         img = cv2.putText(img, txt, loc, font, 1, w, 2, lt)
         cv2.imwrite(os.path.join(save_to, f"candidate_{i}.png"), img)
+
+
+def get_bounding_box(
+    obs: List[Dict[str, ndarray]],
+    objectList: List[SemanticObject],
+):
+    """Return the image with bounding boxes drawn on objects inside objectList"""
+    N, H, W = len(objectList), obs["semantic"].shape[0], obs["semantic"].shape[1]
+    masks = np.zeros((N, H, W))
+    for i, object in enumerate(objectList):
+        masks[i] = (obs["semantic"] == np.array([[(object.semantic_id)]])).reshape(
+            (1, H, W)
+        )
+
+    boxes = masks_to_boxes(torch.from_numpy(masks))
+    area = 0
+    for box in boxes:
+        area += (box[2] - box[0]) * (box[3] - box[1])
+    img = Image.fromarray(obs["rgb"][:, :, :3], "RGB")
+    drawn_img = draw_bounding_boxes(PILToTensor()(img), boxes, colors="red", width=3)
+    return drawn_img, boxes, area.cpu().detach().numpy() / (H * W)
+
+
+def _get_iou_pose(sim: Simulator, pose: AgentState, objectList: List[SemanticObject]):
+    """Get coverage of all the objects in the objectList"""
+    agent = sim.get_agent(0)
+    agent.set_state(pose)
+    obs = sim.get_sensor_observations()
+    cov = np.zeros((len(objectList), 1))
+    for i, obj in enumerate(objectList):
+        cov_obj = compute_pixel_coverage(obs["semantic"], obj.semantic_id)
+        if cov_obj <= 0:
+            return None, None, "Failure: All Objects are not Visualized"
+        cov[i] = cov_obj
+    return cov, pose, "Successs"
+
+
+def get_best_viewpoint_with_posesampler(
+    sim: Simulator,
+    pose_sampler: PoseSampler,
+    objectList: List[SemanticObject],
+):
+    search_center = np.mean(np.array([obj.aabb.center for obj in objectList]), axis=0)
+    candidate_states = pose_sampler.sample_agent_poses_radially(search_center)
+    candidate_poses_ious = list(
+        _get_iou_pose(sim, pos, objectList) for pos in candidate_states
+    )
+    candidate_poses_ious_filtered = [
+        p for p in candidate_poses_ious if (p[0] is not None)
+    ]
+    candidate_poses_sorted = sorted(
+        candidate_poses_ious_filtered, key=lambda x: np.sum(x[0]), reverse=True
+    )
+    if candidate_poses_sorted:
+        return True, candidate_poses_sorted[0]
+    else:
+        return False, None
