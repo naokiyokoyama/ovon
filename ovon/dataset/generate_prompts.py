@@ -49,41 +49,38 @@ def create_html(file_name, relationships, visualised=True, threshold=0):
     """
     cnt = 0
     html_body = ""
-    for reln in relationships:
-        # Visualized Objects
-        print(reln)
-        if visualised and reln["area"] >= threshold:
-            cnt += 1
-            scene = reln["scene"]
-            name = reln["img_ref"]
-            cov_sum = np.sum(reln["cov"])
-            html_body += (
-                f"""<input type="checkbox" id="{scene}/{name}" name="{scene}/{name}">"""
-            )
-            if cnt % 5 == 1:
-                html_body += """<div class="row">"""
-            html_body += f"""
-                        <div class="column">
-                            <img src="../images/relationships_{dim}d/{reln['scene']}/{reln['img_ref']}.png" alt="{reln['img_ref']}" style="width:100%">
-                            <h5>{reln['img_ref']} cov = {cov_sum:.3f}, frac = {reln['area']:.3f}, dist = {reln['distance']:.3f}</h5>
-                        </div>
-                        """
-            if cnt % 5 == 0:
-                html_body += "</div>"
-        # Filtered Objects
-        elif not visualised and reln["area"] < threshold:
-            cnt += 1
-            if cnt % 5 == 1:
-                html_body += """<div class="row">"""
-            html_body += f"""
-                        <div class="column">
-                            <input type="checkbox" id="{name}" name="{name}">
-                            <img src="../images/relationships_{dim}d/{reln['scene']}/{reln['img_ref']}.png" alt="{name}" style="width:100%">
-                            <h5>cov = {sum(reln['cov']):.3f}, frac = {reln['area']:.3f}</h5>
-                        </div>
-                        """
-            if cnt % 5 == 0:
-                html_body += "</div>"
+    for scene in relationships.keys():
+        for obj_id in relationships[scene].keys():
+            info_dict = relationships[scene][obj_id]
+            if visualised and info_dict["area"] >= threshold:
+                cnt += 1
+                name = info_dict["img_ref"]
+                cov_sum = np.sum(info_dict["cov"])
+                html_body += f"""<input type="checkbox" id="{scene}/{name}" name="{scene}/{name}">"""
+                if cnt % 5 == 1:
+                    html_body += """<div class="row">"""
+                html_body += f"""
+                            <div class="column">
+                                <img src="../images/relationships_{dim}d/{scene}/{info_dict['img_ref']}.png" alt="{info_dict['img_ref']}" style="width:100%">
+                                <h5>{info_dict['img_ref']} cov = {cov_sum:.3f}, frac = {info_dict['area']:.3f}, dist = {info_dict['distance']:.3f}</h5>
+                            </div>
+                            """
+                if cnt % 5 == 0:
+                    html_body += "</div>"
+            # Filtered Objects
+            elif not visualised and info_dict["area"] < threshold:
+                cnt += 1
+                if cnt % 5 == 1:
+                    html_body += """<div class="row">"""
+                html_body += f"""
+                            <div class="column">
+                                <input type="checkbox" id="{name}" name="{name}">
+                                <img src="../images/relationships_{dim}d/{scene}/{info_dict['img_ref']}.png" alt="{name}" style="width:100%">
+                                <h5>cov = {sum(info_dict['cov']):.3f}, frac = {info_dict['area']:.3f}</h5>
+                            </div>
+                            """
+                if cnt % 5 == 0:
+                    html_body += "</div>"
     html_body = (
         f"""
                 <body>
@@ -98,7 +95,7 @@ def create_html(file_name, relationships, visualised=True, threshold=0):
     f.close()
 
 
-def isabove(b, a):
+def is_above(b, a):
     b_center = b.aabb.center
     a_center = a.aabb.center
     _, a_y, _ = a.aabb.sizes / 2
@@ -138,9 +135,9 @@ def get_relation_3d(sim, agent, pose_sampler, a, b, closest_points=None):
             rel = f"{name_b} near {name_a}"
 
     else:
-        if isabove(b, a):
+        if is_above(b, a):
             rel = f"{name_b} above {name_a}"
-        elif isabove(a, b):
+        elif is_above(a, b):
             rel = f"{name_b} below {name_a}"
         else:
             rel = f"{name_b} near {name_a}"
@@ -203,7 +200,7 @@ def get_surface_points(obj_a):
     return points
 
 
-def iscloseto(obj_a, obj_b, delta):
+def is_close_to(obj_a, obj_b, delta):
     pts_a = get_surface_points(obj_a)
     pts_b = get_surface_points(obj_b)
     dist = distance.cdist(pts_a, pts_b, "euclidean")
@@ -228,8 +225,12 @@ def get_spatial_relationships(
     filtered_objects = [
         obj for obj in objects if obj.category.name() in FILTERED_CATEGORIES
     ]
-    if not osp.isdir(f"data/images/relationships_{dim}d/{scene_key}"):
-        os.mkdir(f"data/images/relationships_{dim}d/{scene_key}")
+    if not osp.isdir(
+        f"/nethome/akutumbaka3/files/ovonproject/data/images/relationships_{dim}d/{scene_key}"
+    ):
+        os.mkdir(
+            f"/nethome/akutumbaka3/files/ovonproject/data/images/relationships_{dim}d/{scene_key}"
+        )
 
     relationships[scene_key] = {}
 
@@ -241,7 +242,7 @@ def get_spatial_relationships(
             if np.linalg.norm(a.aabb.center - b.aabb.center) > 2:
                 continue
 
-            close, min_distance, pta, ptb = iscloseto(a, b, delta)
+            close, min_distance, pta, ptb = is_close_to(a, b, delta)
             closest_points = (pta, ptb)
 
             if name_a != name_b and close:
@@ -271,15 +272,22 @@ def get_spatial_relationships(
                         "img_ref": name,
                     }
                     (ToPILImage()(img)).convert("RGB").save(
-                        f"data/images/relationships_{dim}d/{scene_key}/{name}.png"
+                        f"/nethome/akutumbaka3/files/ovonproject/data/images/relationships_{dim}d/{scene_key}/{name}.png"
                     )
 
 
 def main():
-    if (force) or (not (os.path.isfile(f"data/relationships{dim}d_{split}.pickle"))):
+    if (force) or (
+        not (
+            os.path.isfile(
+                f"/nethome/akutumbaka3/files/ovonproject/data/relationships{dim}d_{split}.pickle"
+            )
+        )
+    ):
         relationships = {}
         HM3D_SCENES = get_hm3d_semantic_scenes("data/scene_datasets/hm3d")
-        for i, scene in enumerate(tqdm(list(HM3D_SCENES[split])[:3])):
+        print("Total number of scenes: ", len(list(HM3D_SCENES[split])))
+        for i, scene in enumerate(tqdm(list(HM3D_SCENES[split]))):
             scene_key = os.path.basename(scene).split(".")[0]
             cfg = get_objnav_config(i, scene_key)
             sim = get_simulator(cfg)
@@ -299,14 +307,23 @@ def main():
                 sim, objects_info, scene_key, pose_sampler, relationships, dim, delta
             )
             sim.close()
-        with open(f"data/relationships{dim}d_{split}.pickle", "wb") as handle:
+        with open(
+            f"/nethome/akutumbaka3/files/ovonproject/data/relationships{dim}d_{split}.pickle",
+            "wb",
+        ) as handle:
             pickle.dump(relationships, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     else:
-        with open(f"data/relationships{dim}d_{split}.pickle", "rb") as handle:
+        with open(
+            f"/nethome/akutumbaka3/files/ovonproject/data/relationships{dim}d_{split}.pickle",
+            "rb",
+        ) as handle:
             relationships = pickle.load(handle)
 
-    create_html(f"data/webpage/relationships_visualized_{split}.html", relationships)
+    create_html(
+        f"/nethome/akutumbaka3/files/ovonproject/data/webpage/relationships_visualized_{split}.html",
+        relationships,
+    )
 
 
 if __name__ == "__main__":

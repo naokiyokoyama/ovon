@@ -13,7 +13,7 @@ from numpy import ndarray
 from ovon.dataset.pose_sampler import PoseSampler
 from PIL import Image
 from torchvision.ops import masks_to_boxes
-from torchvision.transforms import PILToTensor, ToPILImage
+from torchvision.transforms import PILToTensor
 from torchvision.utils import draw_bounding_boxes
 
 IMAGE_DIR = "data/images/ovon_dataset_gen/debug"
@@ -102,7 +102,7 @@ def get_best_viewpoint_with_posesampler(
     search_center = np.mean(np.array([obj.aabb.center for obj in objectList]), axis=0)
     candidate_states = pose_sampler.sample_agent_poses_radially(search_center)
     candidate_poses_ious = list(
-        _get_iou_pose(sim, pos, objectList) for pos in candidate_states
+        _get_iou_pose(sim, pos, objectList) for pos, _ in candidate_states
     )
     candidate_poses_ious_filtered = [
         p for p in candidate_poses_ious if (p[0] is not None)
