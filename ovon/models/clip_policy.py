@@ -287,10 +287,28 @@ class ResNetCLIPEncoder(nn.Module):
     ):
         super().__init__()
 
-        self.rgb = "rgb" in observation_space.spaces
+        # Assume that if we have pretrained features, they are of just RGB (no depth)
+        self.rgb = (
+            "rgb" in observation_space.spaces
+            or PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
+            in observation_space.spaces
+        )
         self.depth = "depth" in observation_space.spaces
 
-        if not self.is_blind:
+        using_encoder_obs_transform = (
+            "rgb" not in observation_space.spaces
+            and PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
+            in observation_space.spaces
+        )
+        if using_encoder_obs_transform:
+            self.backbone = None
+            if pooling == "none":
+                self.output_shape = (2048, 7, 7)
+            elif pooling == "avgpool":
+                self.output_shape = (2048,)
+            else:
+                self.output_shape = (1024,)
+        elif not self.is_blind:
             model, preprocess = clip.load(clip_model)
 
             # expected input: C x H x W (np.uint8 in [0-255])

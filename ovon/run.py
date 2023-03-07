@@ -123,6 +123,16 @@ def edit_config(config, args):
         if hasattr(config.habitat_baselines.rl.policy, "obs_transforms"):
             config.habitat_baselines.rl.policy.obs_transforms = {}
 
+    # If CLIP is being used as an observation transformer, transplant the config from
+    # the policy DictConfig to the obs_transforms DictConfig
+    if (
+        hasattr(config.habitat_baselines.rl.policy, "obs_transforms")
+        and "clip_encoder" in config.habitat_baselines.rl.policy.obs_transforms
+    ):
+        config.habitat_baselines.rl.policy.obs_transforms[
+            "clip_encoder"
+        ].backbone = config.habitat_baselines.rl.ddppo.backbone
+
 
 if __name__ == "__main__":
     main()
