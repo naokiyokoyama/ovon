@@ -23,10 +23,7 @@ from numpy import ndarray
 from tqdm import tqdm
 
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (
-    ObjectCategoryMapping,
-    get_hm3d_semantic_scenes,
-)
+from ovon.dataset.semantic_utils import ObjectCategoryMapping, get_hm3d_semantic_scenes
 
 
 class ObjectGoalGenerator:
@@ -48,6 +45,7 @@ class ObjectGoalGenerator:
     min_geo_to_euc_ratio: float
     start_retries: int
     cat_map: ObjectCategoryMapping
+    max_viewpoint_radius: float
 
     def __init__(
         self,
@@ -71,7 +69,7 @@ class ObjectGoalGenerator:
         start_retries: int = 1000,
         sample_dense_viewpoints: bool = False,
         device_id: int = 0,
-        total_tasks: int = 0,
+        max_viewpoint_radius: float = 1.0,
     ) -> None:
         self.semantic_spec_filepath = semantic_spec_filepath
         self.img_size = img_size
@@ -90,6 +88,7 @@ class ObjectGoalGenerator:
         self.start_retries = start_retries
         self.sample_dense_viewpoints = sample_dense_viewpoints
         self.device_id = device_id
+        self.max_viewpoint_radius = max_viewpoint_radius
         self.cat_map = ObjectCategoryMapping(
             mapping_file=mapping_file,
             allowed_categories=categories,
@@ -390,6 +389,7 @@ class ObjectGoalGenerator:
         states = pose_sampler.sample_agent_poses_radially(obj)
         observations = self._render_poses(sim, states)
         observations, states = self._can_see_object(observations, states, obj)
+
         if len(observations) == 0:
             return None
 
@@ -445,14 +445,14 @@ class ObjectGoalGenerator:
             goal = self._make_goal(
                 sim, pose_sampler, obj, with_viewpoints, with_start_poses
             )
-            if goal is not None:
+            if goal is not None and len(goal["view_points"]) > 0:
                 object_goals[goal["object_category"]].append(goal)
                 results.append(
                     (obj.id, obj.category.name(), len(goal["view_points"]))
                 )
 
         all_goals = []
-        for object_category, goals in object_goals.items():
+        for object_category, goals in tqdm(object_goals.items()):
             start_positions, start_rotations = self._sample_start_poses(
                 sim, goals
             )
@@ -619,7 +619,7 @@ def make_episodes_for_scene(args):
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
 
-    iig_maker = ObjectGoalGenerator(
+    objectgoal_maker = ObjectGoalGenerator(
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
         img_size=(512, 512),
         hfov=90,
@@ -646,20 +646,21 @@ def make_episodes_for_scene(args):
         start_distance_limits=(1.0, 30.0),
         min_geo_to_euc_ratio=1.05,
         start_retries=2000,
+        max_viewpoint_radius=1.0,
         device_id=device_id,
     )
 
-    object_goals = iig_maker.make_object_goals(
+    object_goals = objectgoal_maker.make_object_goals(
         scene=scene, with_viewpoints=True, with_start_poses=True
     )
     print("Scene: {}".format(scene))
-    episode_dataset = iig_maker.make_episodes(object_goals, scene)
+    episode_dataset = objectgoal_maker.make_episodes(object_goals, scene)
 
     scene_name = os.path.basename(scene).split(".")[0]
     save_to = os.path.join(outpath, f"{scene_name}.json.gz")
     os.makedirs(os.path.dirname(save_to), exist_ok=True)
     print("Total episodes: {}".format(len(episode_dataset.episodes)))
-    iig_maker.save_to_disk(episode_dataset, save_to)
+    objectgoal_maker.save_to_disk(episode_dataset, save_to)
 
 
 def make_episodes_for_split(
@@ -667,7 +668,7 @@ def make_episodes_for_split(
     outpath: str,
     num_scenes: str,
     tasks_per_gpu: int = 1,
-    multiprocessing_enabled: bool = False,
+    multiprocessing: bool = False,
 ):
     scenes = list(
         get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
@@ -684,12 +685,13 @@ def make_episodes_for_split(
     )
     ObjectGoalGenerator.save_to_disk(dataset, save_to)
 
-    if multiprocessing_enabled:
+    deviceIds = GPUtil.getAvailable(
+        order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
+    )
+
+    if multiprocessing:
         gpus = len(GPUtil.getAvailable(limit=256))
         cpu_threads = gpus * 16
-        deviceIds = GPUtil.getAvailable(
-            order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
-        )
         print(
             "In multiprocessing setup - cpu {}, GPU: {}".format(
                 cpu_threads, gpus
@@ -711,7 +713,9 @@ def make_episodes_for_split(
                 pbar.update()
     else:
         for scene in tqdm(scenes, total=len(scenes), dynamic_ncols=True):
-            make_episodes_for_scene(scene, outpath.format(split))
+            make_episodes_for_scene(
+                (scene, outpath.format(split), deviceIds[0])
+            )
 
 
 if __name__ == "__main__":
@@ -737,8 +741,8 @@ if __name__ == "__main__":
         default=1,
     )
     parser.add_argument(
-        "--multiprocessing-enabled",
-        dest="multiprocessing_enabled",
+        "--multiprocessing",
+        dest="multiprocessing",
         action="store_true",
     )
 
@@ -749,5 +753,5 @@ if __name__ == "__main__":
         outpath,
         args.num_scenes,
         args.tasks_per_gpu,
-        args.multiprocessing_enabled,
+        args.multiprocessing,
     )

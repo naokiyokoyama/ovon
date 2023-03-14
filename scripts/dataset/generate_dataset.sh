@@ -20,5 +20,5 @@ MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
 export MAIN_ADDR
 
 srun python ovon/dataset/objectnav_generator.py \
-  --split val \
-  --num-scenes 20
+  --split train \
+  --num-scenes -1
