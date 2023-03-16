@@ -4,11 +4,23 @@ import os
 import pickle
 from collections import defaultdict
 from collections.abc import MutableMapping
-from typing import Dict, Iterable, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set
+
+
+class Relationship:
+    scene: str
+    relation: str
+    ref_object: str
+    target_object: str
+    ref_obj_semantic_id: int
+    target_obj_semantic_id: int
+    distance: float
+    cov: float
+    area: float
+    img_ref: str
 
 
 class ObjectCategoryMapping(MutableMapping):
-
     _mapping: Dict[str, str]
 
     def __init__(
@@ -41,7 +53,6 @@ class ObjectCategoryMapping(MutableMapping):
             "decoration",
         ],
     ) -> Dict[str, str]:
-
         # Filter based on coverage
         file = open(coverage_meta_file, "rb")
         coverage_metadata = pickle.load(file)
@@ -124,6 +135,49 @@ class ObjectCategoryMapping(MutableMapping):
         return key.lower()
 
 
+class SceneRelationshipsMapping(MutableMapping):
+    _mapping: Dict[str, Dict[str, List[Relationship]]]
+
+    def __init__(
+        self,
+        mapping_file: str,
+    ) -> None:
+        self._mapping = self.load_relationships(mapping_file)
+
+    @staticmethod
+    def load_relationships(
+        mapping_file: str,
+    ) -> Dict[str, Dict[str, Relationship]]:
+        file = open(mapping_file, "rb")
+        mapping = pickle.load(file)
+
+        new_mapping = {}
+        for scene in mapping.keys():
+            new_mapping[scene] = {
+                reln["name"]: [i for i in mapping[scene] if i["name"] == reln["name"]]
+                for reln in mapping[scene]
+            }
+
+        return new_mapping
+
+    def __getitem__(self, key: str):
+        if key in self._mapping:
+            return self._mapping[key]
+        return None
+
+    def __setitem__(self, key: str, value: str):
+        self._mapping[key] = value
+
+    def __delitem__(self, key: str):
+        del self._mapping[key]
+
+    def __iter__(self):
+        return iter(self._mapping)
+
+    def __len__(self):
+        return len(self._mapping)
+
+
 def get_hm3d_semantic_scenes(
     hm3d_dataset_dir: str, splits: Optional[Iterable[str]] = None
 ) -> Dict[str, Set[str]]:
@@ -141,9 +195,7 @@ def get_hm3d_semantic_scenes(
     semantic_scenes = {}  # split -> scene file path
     for split in splits:
         split_dir = os.path.join(hm3d_dataset_dir, split)
-        all_scenes = [
-            os.path.join(split_dir, s) for s in os.listdir(split_dir)
-        ]
+        all_scenes = [os.path.join(split_dir, s) for s in os.listdir(split_dir)]
         all_scenes = [s for s in all_scenes if include_scene(s)]
         scene_paths = {os.path.join(s, get_basis_file(s)) for s in all_scenes}
         semantic_scenes[split] = scene_paths

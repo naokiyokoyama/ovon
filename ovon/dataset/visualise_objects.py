@@ -12,7 +12,9 @@ import numpy as np
 from habitat.config.default import get_agent_config, get_config
 from habitat.config.default_structured_configs import HabitatSimSemanticSensorConfig
 from habitat.config.read_write import read_write
-from habitat_sim._ext.habitat_sim_bindings import BBox
+from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
+from habitat_sim.agent.agent import Agent, AgentState
+from habitat_sim.simulator import Simulator
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import get_hm3d_semantic_scenes
 from ovon.dataset.visualization import (
@@ -27,7 +29,12 @@ NUM_GPUS = len(GPUtil.getAvailable(limit=256))
 TASKS_PER_GPU = 12
 
 
-def create_html(file_name, objects_mapping, visualised=True, threshold=0.05):
+def create_html(
+    file_name: str,
+    objects_mapping: Dict,
+    visualised: bool = True,
+    threshold: float = 0.05,
+):
     html_head = """
     <html>
     <head>
@@ -130,7 +137,7 @@ def create_html(file_name, objects_mapping, visualised=True, threshold=0.05):
     f.close()
 
 
-def is_on_ceiling(sim, aabb: BBox):
+def is_on_ceiling(sim: Simulator, aabb: BBox):
     point = np.asarray(aabb.center)
     snapped = sim.pathfinder.snap_point(point)
 
@@ -145,7 +152,13 @@ def is_on_ceiling(sim, aabb: BBox):
     return False
 
 
-def get_objects(sim, objects_info, scene_key, obj_mapping, pose_sampler):
+def get_objects(
+    sim: Simulator,
+    objects_info: List[SemanticObject],
+    scene_key: str,
+    obj_mapping: Dict,
+    pose_sampler: PoseSampler,
+) -> None:
     objects_visualized = []
     cnt = 0
     agent = sim.get_agent(0)
@@ -188,7 +201,7 @@ def get_objects(sim, objects_info, scene_key, obj_mapping, pose_sampler):
     )
 
 
-def get_objnav_config(i, scene):
+def get_objnav_config(i: int, scene: str):
     CFG = "habitat-lab/habitat-lab/habitat/config/benchmark/nav/objectnav/objectnav_hm3d.yaml"
     SCENE_CFG = f"{SCENES_ROOT}/hm3d_annotated_basis.scene_dataset_config.json"
     objnav_config = get_config(CFG)
@@ -233,7 +246,7 @@ def get_objnav_config(i, scene):
     return objnav_config
 
 
-def get_simulator(objnav_config):
+def get_simulator(objnav_config) -> Simulator:
     sim = habitat.sims.make_sim("Sim-v0", config=objnav_config.habitat.simulator)
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()

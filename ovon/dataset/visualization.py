@@ -72,12 +72,14 @@ def get_bounding_box(
         )
 
     boxes = masks_to_boxes(torch.from_numpy(masks))
-    area = 0
+    area = []
     for box in boxes:
-        area += (box[2] - box[0]) * (box[3] - box[1])
+        area.append(
+            ((box[2] - box[0]) * (box[3] - box[1])).cpu().detach().numpy() / (H * W)
+        )
     img = Image.fromarray(obs["rgb"][:, :, :3], "RGB")
     drawn_img = draw_bounding_boxes(PILToTensor()(img), boxes, colors="red", width=3)
-    return drawn_img, boxes, area.cpu().detach().numpy() / (H * W)
+    return drawn_img, boxes, area
 
 
 def _get_iou_pose(sim: Simulator, pose: AgentState, objectList: List[SemanticObject]):
