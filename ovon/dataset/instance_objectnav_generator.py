@@ -3,6 +3,7 @@ import gzip
 import itertools
 import multiprocessing
 import os
+import pickle
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -17,19 +18,19 @@ from habitat_sim.agent.agent import AgentConfiguration, AgentState, SixDOFPose
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_two_vectors, quat_to_coeffs
 from numpy import ndarray
+from ovon.dataset.pose_sampler import PoseSampler
+from ovon.dataset.semantic_utils import (
+    ObjectCategoryMapping,
+    SceneRelationshipsMapping,
+    get_hm3d_semantic_scenes,
+)
 
 # from ovon.dataset.visualization import plot_area  # noqa:F401
 # from ovon.dataset.visualization import save_candidate_imgs
 from tqdm import tqdm
 
-from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (
-    ObjectCategoryMapping,
-    get_hm3d_semantic_scenes,
-)
 
-
-class ObjectGoalGenerator:
+class InstanceObjectGoalGenerator:
     ISLAND_RADIUS_LIMIT: float = 1.5
 
     semantic_spec_filepath: str
@@ -47,7 +48,7 @@ class ObjectGoalGenerator:
     min_geo_to_euc_ratio: float
     start_retries: int
     cat_map: ObjectCategoryMapping
-    max_viewpoint_radius: float
+    relationships_mapping: SceneRelationshipsMapping
 
     def __init__(
         self,
@@ -61,6 +62,7 @@ class ObjectGoalGenerator:
         mapping_file: str,
         categories: str,
         coverage_meta_file: str,
+        relationship_meta_file: str,
         frame_cov_thresh: Tuple[float, float],
         goal_vp_cell_size: float = 0.1,
         goal_vp_max_dist: float = 1.0,
@@ -71,6 +73,7 @@ class ObjectGoalGenerator:
         start_retries: int = 1000,
         sample_dense_viewpoints: bool = False,
         device_id: int = 0,
+        total_tasks: int = 0,
         max_viewpoint_radius: float = 1.0,
     ) -> None:
         self.semantic_spec_filepath = semantic_spec_filepath
@@ -90,13 +93,14 @@ class ObjectGoalGenerator:
         self.start_retries = start_retries
         self.sample_dense_viewpoints = sample_dense_viewpoints
         self.device_id = device_id
-        self.max_viewpoint_radius = max_viewpoint_radius
         self.cat_map = ObjectCategoryMapping(
             mapping_file=mapping_file,
             allowed_categories=categories,
             coverage_meta_file=coverage_meta_file,
             frame_coverage_threshold=frame_cov_thresh,
         )
+        self.relationships_mapping = SceneRelationshipsMapping(relationship_meta_file)
+        self.max_viewpoint_radius = max_viewpoint_radius
 
     def _config_sim(self, scene: str) -> Simulator:
         sim_cfg = hsim.SimulatorConfiguration()
@@ -131,22 +135,16 @@ class ObjectGoalGenerator:
             action_space={
                 "look_up": habitat_sim.ActionSpec(
                     "look_up",
-                    habitat_sim.ActuationSpec(
-                        amount=self.start_poses_tilt_angle
-                    ),
+                    habitat_sim.ActuationSpec(amount=self.start_poses_tilt_angle),
                 ),
                 "look_down": habitat_sim.ActionSpec(
                     "look_down",
-                    habitat_sim.ActuationSpec(
-                        amount=self.start_poses_tilt_angle
-                    ),
+                    habitat_sim.ActuationSpec(amount=self.start_poses_tilt_angle),
                 ),
             },
         )
 
-        sim = habitat_sim.Simulator(
-            habitat_sim.Configuration(sim_cfg, [agent_cfg])
-        )
+        sim = habitat_sim.Simulator(habitat_sim.Configuration(sim_cfg, [agent_cfg]))
 
         # set the navmesh
         assert sim.pathfinder.is_loaded, "pathfinder is not loaded!"
@@ -247,9 +245,7 @@ class ObjectGoalGenerator:
             for iou, pt, q in candiatate_poses_ious
             if iou > self.frame_cov_thresh
         ]
-        view_locations = sorted(
-            view_locations, reverse=True, key=lambda v: v["iou"]
-        )
+        view_locations = sorted(view_locations, reverse=True, key=lambda v: v["iou"])
 
         # # for debugging: shows top-down map of viewpoints.
         # plot_area(
@@ -276,19 +272,15 @@ class ObjectGoalGenerator:
 
         while len(start_positions) < self.start_poses_per_obj:
             for _ in range(self.start_retries):
-                start_position = (
-                    sim.pathfinder.get_random_navigable_point().astype(
-                        np.float32
-                    )
+                start_position = sim.pathfinder.get_random_navigable_point().astype(
+                    np.float32
                 )
                 if (
                     start_position is None
                     or np.any(np.isnan(start_position))
                     or not sim.pathfinder.is_navigable(start_position)
                 ):
-                    raise RuntimeError(
-                        "Unable to find valid starting location"
-                    )
+                    raise RuntimeError("Unable to find valid starting location")
 
                 # point should be not be isolated to a small poly island
                 if (
@@ -319,9 +311,7 @@ class ObjectGoalGenerator:
                 ):
                     continue
 
-                dist_ratio = geo_dist / np.linalg.norm(
-                    start_position - closest_pt
-                )
+                dist_ratio = geo_dist / np.linalg.norm(start_position - closest_pt)
                 if dist_ratio < self.min_geo_to_euc_ratio:
                     continue
 
@@ -384,20 +374,18 @@ class ObjectGoalGenerator:
         obj: SemanticObject,
         with_viewpoints: bool,
         with_start_poses: bool,
+        prompt_goal: str = None,
     ):
         if with_start_poses:
             assert with_viewpoints
 
-        states = pose_sampler.sample_agent_poses_radially(obj)
+        states = pose_sampler.sample_agent_poses_radially(search_center=obj.aabb.center)
         observations = self._render_poses(sim, states)
         observations, states = self._can_see_object(observations, states, obj)
-
         if len(observations) == 0:
             return None
 
-        frame_coverages = self._compute_frame_coverage(
-            observations, obj.semantic_id
-        )
+        frame_coverages = self._compute_frame_coverage(observations, obj.semantic_id)
 
         keep_goal = self._threshold_object_goals(frame_coverages)
 
@@ -405,7 +393,9 @@ class ObjectGoalGenerator:
             return None
 
         result = {
-            "object_category": self.cat_map[obj.category.name()],
+            "object_category": self.cat_map[obj.category.name()]
+            if prompt_goal is None
+            else prompt_goal,
             "object_id": obj.id,
             "position": obj.aabb.center.tolist(),
         }
@@ -440,26 +430,40 @@ class ObjectGoalGenerator:
             for o in sim.semantic_scene.objects
             if self.cat_map[o.category.name()] is not None
         ]
+        id_to_object = {obj.semantic_id: obj for obj in objects}
+
+        scene_key = os.path.basename(scene).split(".")[0]
+        print(scene_key)
+        scene_relationships = self.relationships_mapping[scene_key]
 
         object_goals = defaultdict(list)
         results = []
-        for obj in tqdm(objects, total=len(objects), dynamic_ncols=True):
-            goal = self._make_goal(
-                sim, pose_sampler, obj, with_viewpoints, with_start_poses
-            )
-            if goal is not None and len(goal["view_points"]) > 0:
-                object_goals[goal["object_category"]].append(goal)
-                results.append(
-                    (obj.id, obj.category.name(), len(goal["view_points"]))
+
+        for reln_name, reln_instances_list in tqdm(
+            scene_relationships.items(),
+            total=len(scene_relationships.items()),
+            dynamic_ncols=True,
+        ):
+            for instance in reln_instances_list:
+                obj_id = instance["target_obj_semantic_id"]
+                obj = id_to_object[obj_id]
+                goal = self._make_goal(
+                    sim,
+                    pose_sampler,
+                    obj,
+                    with_viewpoints,
+                    with_start_poses,
+                    prompt_goal=reln_name,
                 )
+                if goal is not None and len(goal["view_points"]) > 0:
+                    object_goals[reln_name].append(goal)
+                    results.append((obj_id, reln_name, len(goal["view_points"])))
 
         all_goals = []
-        for object_category, goals in tqdm(object_goals.items()):
-            start_positions, start_rotations = self._sample_start_poses(
-                sim, goals
-            )
+        for relationship_name, goals in object_goals.items():
+            start_positions, start_rotations = self._sample_start_poses(sim, goals)
             if len(start_positions) == 0:
-                print("Start poses none for: {}".format(object_category))
+                print("Start poses none for: {}".format(relationship_name))
                 continue
 
             all_goals.append(
@@ -515,17 +519,13 @@ class ObjectGoalGenerator:
     def _geodesic_distance(
         sim: Simulator,
         position_a: Union[Sequence[float], np.ndarray],
-        position_b: Union[
-            Sequence[float], Sequence[Sequence[float]], np.ndarray
-        ],
+        position_b: Union[Sequence[float], Sequence[Sequence[float]], np.ndarray],
     ) -> float:
         path = habitat_sim.MultiGoalShortestPath()
         if isinstance(position_b[0], (Sequence, np.ndarray)):
             path.requested_ends = np.array(position_b, dtype=np.float32)
         else:
-            path.requested_ends = np.array(
-                [np.array(position_b, dtype=np.float32)]
-            )
+            path.requested_ends = np.array([np.array(position_b, dtype=np.float32)])
         path.requested_start = np.array(position_a, dtype=np.float32)
         sim.pathfinder.find_path(path)
         end_pt = path.points[-1] if len(path.points) else np.array([])
@@ -574,9 +574,7 @@ class ObjectGoalGenerator:
         for goal in object_goals:
             object_goal = goal["object_goals"][0]
             scene_id = scene.split("/")[-1]
-            goals_category_id = "{}_{}".format(
-                scene_id, object_goal["object_category"]
-            )
+            goals_category_id = "{}_{}".format(scene_id, object_goal["object_category"])
             print(
                 "Goal category: {} - viewpoints: {}".format(
                     goals_category_id, len(object_goal["view_points"])
@@ -586,7 +584,7 @@ class ObjectGoalGenerator:
             if len(goal["start_positions"]) == 0:
                 print(
                     "Object: {} is ignored because there are no valid start positions".format(
-                        object_goal["object_category"]
+                        object_goal["img_ref"]
                     )
                 )
                 continue
@@ -595,9 +593,7 @@ class ObjectGoalGenerator:
 
             goals_by_category[goals_category_id].extend(goal["object_goals"])
 
-            for start_position, start_rotation in zip(
-                start_positions, start_rotations
-            ):
+            for start_position, start_rotation in zip(start_positions, start_rotations):
                 episode = self._create_episode(
                     episode_id=episode_count,
                     scene_id=scene.replace("data/scene_datasets/", ""),
@@ -621,7 +617,7 @@ def make_episodes_for_scene(args):
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
 
-    objectgoal_maker = ObjectGoalGenerator(
+    iig_maker = InstanceObjectGoalGenerator(
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
         img_size=(512, 512),
         hfov=90,
@@ -640,6 +636,7 @@ def make_episodes_for_scene(args):
         mapping_file="ovon/dataset/source_data/Mp3d_category_mapping.tsv",
         categories=None,
         coverage_meta_file="data/coverage_meta/train.pkl",
+        relationship_meta_file="data/relationships/relationships2d_train_1_filtered.pickle",
         frame_cov_thresh=0.05,
         goal_vp_cell_size=0.1,
         goal_vp_max_dist=1.0,
@@ -648,21 +645,20 @@ def make_episodes_for_scene(args):
         start_distance_limits=(1.0, 30.0),
         min_geo_to_euc_ratio=1.05,
         start_retries=2000,
-        max_viewpoint_radius=1.0,
         device_id=device_id,
     )
 
-    object_goals = objectgoal_maker.make_object_goals(
+    object_goals = iig_maker.make_object_goals(
         scene=scene, with_viewpoints=True, with_start_poses=True
     )
     print("Scene: {}".format(scene))
-    episode_dataset = objectgoal_maker.make_episodes(object_goals, scene)
+    episode_dataset = iig_maker.make_episodes(object_goals, scene)
 
     scene_name = os.path.basename(scene).split(".")[0]
     save_to = os.path.join(outpath, f"{scene_name}.json.gz")
     os.makedirs(os.path.dirname(save_to), exist_ok=True)
     print("Total episodes: {}".format(len(episode_dataset.episodes)))
-    objectgoal_maker.save_to_disk(episode_dataset, save_to)
+    iig_maker.save_to_disk(episode_dataset, save_to)
 
 
 def make_episodes_for_split(
@@ -670,10 +666,12 @@ def make_episodes_for_split(
     outpath: str,
     num_scenes: str,
     tasks_per_gpu: int = 1,
-    multiprocessing: bool = False,
+    multiprocessing_enabled: bool = False,
 ):
-    scenes = list(
-        get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
+    """Makes episodes for all scenes in a split"""
+    scenes = sorted(
+        list(get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]),
+        reverse=True,
     )[:num_scenes]
     print(scenes)
 
@@ -685,20 +683,15 @@ def make_episodes_for_split(
     save_to = os.path.join(
         outpath.format(split).replace("content/", ""), f"{split}.json.gz"
     )
-    ObjectGoalGenerator.save_to_disk(dataset, save_to)
+    InstanceObjectGoalGenerator.save_to_disk(dataset, save_to)
 
-    deviceIds = GPUtil.getAvailable(
-        order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
-    )
-
-    if multiprocessing:
+    if multiprocessing_enabled:
         gpus = len(GPUtil.getAvailable(limit=256))
         cpu_threads = gpus * 16
-        print(
-            "In multiprocessing setup - cpu {}, GPU: {}".format(
-                cpu_threads, gpus
-            )
+        deviceIds = GPUtil.getAvailable(
+            order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
         )
+        print("In multiprocessing setup - cpu {}, GPU: {}".format(cpu_threads, gpus))
 
         items = []
         for i, s in enumerate(scenes):
@@ -715,9 +708,7 @@ def make_episodes_for_split(
                 pbar.update()
     else:
         for scene in tqdm(scenes, total=len(scenes), dynamic_ncols=True):
-            make_episodes_for_scene(
-                (scene, outpath.format(split), deviceIds[0])
-            )
+            make_episodes_for_scene(scene, outpath.format(split))
 
 
 if __name__ == "__main__":
@@ -743,8 +734,8 @@ if __name__ == "__main__":
         default=1,
     )
     parser.add_argument(
-        "--multiprocessing",
-        dest="multiprocessing",
+        "--multiprocessing-enabled",
+        dest="multiprocessing_enabled",
         action="store_true",
     )
 
@@ -755,5 +746,5 @@ if __name__ == "__main__":
         outpath,
         args.num_scenes,
         args.tasks_per_gpu,
-        args.multiprocessing,
+        args.multiprocessing_enabled,
     )
