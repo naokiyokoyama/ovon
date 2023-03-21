@@ -44,7 +44,10 @@ def main():
         help="Saves files to $JUNK directory and ignores resume state.",
     )
     parser.add_argument(
-        "--single-env", "-s", action="store_true", help="Sets num_environments=1."
+        "--single-env",
+        "-s",
+        action="store_true",
+        help="Sets num_environments=1.",
     )
     parser.add_argument(
         "--debug-datapath",
@@ -53,7 +56,10 @@ def main():
         help="Uses faster-to-load $OVON_DEBUG_DATAPATH episode dataset for debugging.",
     )
     parser.add_argument(
-        "--blind", "-b", action="store_true", help="If set, no cameras will be used."
+        "--blind",
+        "-b",
+        action="store_true",
+        help="If set, no cameras will be used.",
     )
     parser.add_argument(
         "opts",
@@ -82,15 +88,22 @@ def edit_config(config, args):
         )
 
         # Remove resume state in junk folder if training, so we don't resume from it
-        resume_state_path = osp.join(os.environ["JUNK"], ".habitat-resume-state.pth")
+        resume_state_path = osp.join(
+            os.environ["JUNK"], ".habitat-resume-state.pth"
+        )
         if args.run_type == "train" and osp.isfile(resume_state_path):
-            print("Removing junk resume state file:", osp.abspath(resume_state_path))
+            print(
+                "Removing junk resume state file:",
+                osp.abspath(resume_state_path),
+            )
             os.remove(resume_state_path)
 
         config.habitat_baselines.tensorboard_dir = os.environ["JUNK"]
         config.habitat_baselines.video_dir = os.environ["JUNK"]
         config.habitat_baselines.checkpoint_folder = os.environ["JUNK"]
-        config.habitat_baselines.log_file = osp.join(os.environ["JUNK"], "junk.log")
+        config.habitat_baselines.log_file = osp.join(
+            os.environ["JUNK"], "junk.log"
+        )
         config.habitat_baselines.load_resume_state_config = False
 
     if args.debug_datapath and "OVON_DEBUG_DATAPATH" in os.environ:
