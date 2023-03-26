@@ -127,7 +127,9 @@ class OVRLPolicyNet(Net):
             rnn_input_size += 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
-            rnn_input_size += 1024 if clip_model == "RN50" else 768
+            clip_embedding = 1024 if clip_model == "RN50" else 768
+            self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
+            rnn_input_size += 256
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -215,7 +217,7 @@ class OVRLPolicyNet(Net):
             object_goal = (
                 observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
             )
-            x.append(object_goal)
+            x.append(self.obj_categories_embedding(object_goal))
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(

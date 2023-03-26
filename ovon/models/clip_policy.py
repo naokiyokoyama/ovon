@@ -8,9 +8,7 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import (
-    build_rnn_state_encoder,
-)
+from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
@@ -159,7 +157,9 @@ class PointNavResNetCLIPNet(Net):
             rnn_input_size += 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
-            rnn_input_size += 1024 if clip_model == "RN50" else 768
+            clip_embedding = 1024 if clip_model == "RN50" else 768
+            self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
+            rnn_input_size += 256
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -241,7 +241,7 @@ class PointNavResNetCLIPNet(Net):
             object_goal = (
                 observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
             )
-            x.append(object_goal)
+            x.append(self.obj_categories_embedding(object_goal))
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(
