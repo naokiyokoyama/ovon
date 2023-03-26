@@ -25,7 +25,6 @@ class ClipObjectGoalSensorConfig(LabSensorConfig):
 class OVONPolicyConfig(PolicyConfig):
     name: str = "OVONPolicy"
     backbone: str = "resnet50"
-    clip_model: str = "RN50"
     use_augmentations: bool = True
     augmentations_name: str = "jitter+shift"
     use_augmentations_test_time: bool = True
@@ -36,6 +35,9 @@ class OVONPolicyConfig(PolicyConfig):
     drop_path_rate: float = 0.0
     freeze_backbone: bool = True
     pretrained_encoder: str = "data/visual_encoders/omnidata_DINO_02.pth"
+
+    clip_model: str = "RN50"
+    add_clip_linear_projection: bool = False
 
 
 @dataclass

@@ -33,6 +33,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         policy_config: "DictConfig" = None,
         aux_loss_config: Optional["DictConfig"] = None,
         fuse_keys: Optional[List[str]] = None,
+        add_clip_linear_projection: bool = False,
         **kwargs,
     ):
         if policy_config is not None:
@@ -57,6 +58,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 fuse_keys=fuse_keys,
                 force_blind_policy=force_blind_policy,
                 discrete_actions=discrete_actions,
+                add_clip_linear_projection=add_clip_linear_projection,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -99,6 +101,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             policy_config=config.habitat_baselines.rl.policy,
             aux_loss_config=config.habitat_baselines.rl.auxiliary_losses,
             fuse_keys=None,
+            add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
         )
 
 
@@ -115,10 +118,12 @@ class PointNavResNetCLIPNet(Net):
         force_blind_policy: bool = False,
         discrete_actions: bool = True,
         clip_model: str = "RN50",
+        add_clip_linear_projection: bool = False,
     ):
         super().__init__()
         self.prev_action_embedding: nn.Module
         self.discrete_actions = discrete_actions
+        self.add_clip_linear_projection = add_clip_linear_projection
         self._n_prev_action = 32
         if discrete_actions:
             self.prev_action_embedding = nn.Embedding(
@@ -158,8 +163,12 @@ class PointNavResNetCLIPNet(Net):
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
             clip_embedding = 1024 if clip_model == "RN50" else 768
-            self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-            rnn_input_size += 256
+            print("Clip embedding: {}, Add CLIP linear: {}".format(clip_embedding, add_clip_linear_projection))
+            if self.add_clip_linear_projection:
+                self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
+                rnn_input_size += 256
+            else:
+                rnn_input_size += clip_embedding
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -241,7 +250,9 @@ class PointNavResNetCLIPNet(Net):
             object_goal = (
                 observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
             )
-            x.append(self.obj_categories_embedding(object_goal))
+            if self.add_clip_linear_projection:
+                object_goal = self.obj_categories_embedding(object_goal)
+            x.append(object_goal)
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(

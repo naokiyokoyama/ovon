@@ -9,9 +9,7 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import (
-    build_rnn_state_encoder,
-)
+from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 
@@ -54,11 +52,13 @@ class OVRLPolicyNet(Net):
         pretrained_encoder: str = None,
         freeze_backbone: bool = True,
         run_type: str = "train",
+        add_clip_linear_projection: bool = False,
     ):
         super().__init__()
 
         self.prev_action_embedding: nn.Module
         self.discrete_actions = discrete_actions
+        self.add_clip_linear_projection = add_clip_linear_projection
         self._n_prev_action = 32
         if discrete_actions:
             self.prev_action_embedding = nn.Embedding(
@@ -128,8 +128,11 @@ class OVRLPolicyNet(Net):
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
             clip_embedding = 1024 if clip_model == "RN50" else 768
-            self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-            rnn_input_size += 256
+            if self.add_clip_linear_projection:
+                self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
+                rnn_input_size += 256
+            else:
+                rnn_input_size += clip_embedding
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -217,7 +220,9 @@ class OVRLPolicyNet(Net):
             object_goal = (
                 observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
             )
-            x.append(self.obj_categories_embedding(object_goal))
+            if self.add_clip_linear_projection:
+                object_goal = self.obj_categories_embedding(object_goal)
+            x.append(object_goal)
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(
@@ -279,6 +284,7 @@ class OVRLPolicy(NetPolicy):
         drop_path_rate: float = 0.0,
         pretrained_encoder: str = None,
         freeze_backbone: bool = False,
+        add_clip_linear_projection: bool = False,
         run_type: str = "train",
     ):
         if policy_config is not None:
@@ -315,6 +321,7 @@ class OVRLPolicy(NetPolicy):
                 pretrained_encoder=pretrained_encoder,
                 freeze_backbone=freeze_backbone,
                 run_type=run_type,
+                add_clip_linear_projection=add_clip_linear_projection,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -368,4 +375,5 @@ class OVRLPolicy(NetPolicy):
             drop_path_rate=config.habitat_baselines.rl.policy.drop_path_rate,
             pretrained_encoder=config.habitat_baselines.rl.policy.pretrained_encoder,
             freeze_backbone=config.habitat_baselines.rl.policy.freeze_backbone,
+            add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
         )
