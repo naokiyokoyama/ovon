@@ -150,13 +150,18 @@ class DAgger(PPO):
                     batch["rnn_build_seq_info"],
                 )
                 if "inflection" in batch["observations"]:
+                    # Wherever inflections_batch is 1, change it to self.inflection
+                    # weight, otherwise change the value (which should be 0) to 1
                     inflection_weights = torch.where(
                         batch["observations"]["inflection"] == 1,
                         torch.ones_like(batch["observations"]["inflection"])
                         * self.inflection_weight,
                         torch.ones_like(batch["observations"]["inflection"]),
                     )
-                    loss = -(log_probs * inflection_weights).mean()
+                    loss = -(
+                        (log_probs * inflection_weights).sum(0)
+                        / inflection_weights.sum(0)
+                    ).mean()
                 else:
                     loss = -log_probs.mean()
 
