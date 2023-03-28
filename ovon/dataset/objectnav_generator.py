@@ -1,4 +1,5 @@
 import argparse
+import copy
 import gzip
 import itertools
 import multiprocessing
@@ -22,8 +23,13 @@ from numpy import ndarray
 # from ovon.dataset.visualization import save_candidate_imgs
 from tqdm import tqdm
 
+from ovon.dataset.ovon_dataset import OVONEpisode
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import ObjectCategoryMapping, get_hm3d_semantic_scenes
+from ovon.dataset.semantic_utils import (
+    ObjectCategoryMapping,
+    WordnetMapping,
+    get_hm3d_semantic_scenes,
+)
 
 
 class ObjectGoalGenerator:
@@ -70,6 +76,7 @@ class ObjectGoalGenerator:
         sample_dense_viewpoints: bool = False,
         device_id: int = 0,
         max_viewpoint_radius: float = 1.0,
+        wordnet_mapping_file: str = None,
     ) -> None:
         self.semantic_spec_filepath = semantic_spec_filepath
         self.img_size = img_size
@@ -89,6 +96,7 @@ class ObjectGoalGenerator:
         self.sample_dense_viewpoints = sample_dense_viewpoints
         self.device_id = device_id
         self.max_viewpoint_radius = max_viewpoint_radius
+        self.wordnet_map = WordnetMapping(mapping_file=wordnet_mapping_file)
         self.cat_map = ObjectCategoryMapping(
             mapping_file=mapping_file,
             allowed_categories=categories,
@@ -386,7 +394,7 @@ class ObjectGoalGenerator:
         if with_start_poses:
             assert with_viewpoints
 
-        states = pose_sampler.sample_agent_poses_radially(obj)
+        states = pose_sampler.sample_agent_poses_radially(obj.aabb.center)
         observations = self._render_poses(sim, states)
         observations, states = self._can_see_object(observations, states, obj)
 
@@ -406,6 +414,7 @@ class ObjectGoalGenerator:
             "object_category": self.cat_map[obj.category.name()],
             "object_id": obj.id,
             "position": obj.aabb.center.tolist(),
+            "children_object_categories": [],
         }
 
         if not with_viewpoints:
@@ -439,13 +448,16 @@ class ObjectGoalGenerator:
             if self.cat_map[o.category.name()] is not None
         ]
 
-        object_goals = defaultdict(list)
+        object_goals = {}
         results = []
         for obj in tqdm(objects, total=len(objects), dynamic_ncols=True):
             goal = self._make_goal(
                 sim, pose_sampler, obj, with_viewpoints, with_start_poses
             )
             if goal is not None and len(goal["view_points"]) > 0:
+                if goal["object_category"] not in object_goals:
+                    object_goals[goal["object_category"]] = []
+
                 object_goals[goal["object_category"]].append(goal)
                 results.append(
                     (obj.id, obj.category.name(), len(goal["view_points"]))
@@ -453,8 +465,28 @@ class ObjectGoalGenerator:
 
         all_goals = []
         for object_category, goals in tqdm(object_goals.items()):
+            obj_goals = copy.deepcopy(goals)
+            # Merge viewpoints using wordnet mapping
+            if self.wordnet_map[object_category] is not None:
+                # Add goals from wordnet children categories
+                children_object_categories = [
+                    cat
+                    for cat in self.wordnet_map[object_category]
+                    if cat in object_goals
+                ]
+                for category in children_object_categories:
+                    for goal in object_goals[category]:
+                        if len(goal["view_points"]) > 0:
+                            obj_goals.append(goal)
+
+                # Populate wordnet children categories for each goal
+                for goal in goals:
+                    goal[
+                        "children_object_categories"
+                    ] = children_object_categories
+
             start_positions, start_rotations = self._sample_start_poses(
-                sim, goals
+                sim, obj_goals
             )
             if len(start_positions) == 0:
                 print("Start poses none for: {}".format(object_category))
@@ -548,8 +580,9 @@ class ObjectGoalGenerator:
         shortest_paths=None,
         info=None,
         scene_dataset_config="default",
+        children_object_categories=None,
     ):
-        return ObjectGoalNavEpisode(
+        return OVONEpisode(
             episode_id=str(episode_id),
             goals=[],
             scene_id=scene_id,
@@ -559,6 +592,7 @@ class ObjectGoalGenerator:
             shortest_paths=shortest_paths,
             info=info,
             scene_dataset_config=scene_dataset_config,
+            children_object_categories=children_object_categories,
         )
 
     def make_episodes(self, object_goals, scene):
@@ -577,7 +611,10 @@ class ObjectGoalGenerator:
             )
             print(
                 "Goal category: {} - viewpoints: {}".format(
-                    goals_category_id, len(object_goal["view_points"])
+                    goals_category_id,
+                    sum(
+                        [len(gg["view_points"]) for gg in goal["object_goals"]]
+                    ),
                 )
             )
 
@@ -607,6 +644,9 @@ class ObjectGoalGenerator:
                         "euclidean_distance": 0,
                     },
                     object_category=object_goal["object_category"],
+                    children_object_categories=object_goal[
+                        "children_object_categories"
+                    ],
                 )
                 dataset.episodes.append(episode)
                 episode_count += 1
@@ -647,6 +687,7 @@ def make_episodes_for_scene(args):
         min_geo_to_euc_ratio=1.05,
         start_retries=2000,
         max_viewpoint_radius=1.0,
+        wordnet_mapping_file="data/wordnet/wordnet_mapping.json",
         device_id=device_id,
     )
 

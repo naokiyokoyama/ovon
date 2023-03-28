@@ -6,6 +6,8 @@ from collections import defaultdict
 from collections.abc import MutableMapping
 from typing import Dict, Iterable, Optional, Set
 
+from ovon.utils.utils import load_json
+
 
 class ObjectCategoryMapping(MutableMapping):
 
@@ -90,6 +92,60 @@ class ObjectCategoryMapping(MutableMapping):
         )
 
         return mapping
+
+    @staticmethod
+    def limit_mapping(
+        mapping: Dict[str, str], allowed_categories: Optional[Set[str]] = None
+    ) -> Dict[str, str]:
+        if allowed_categories is None:
+            return mapping
+        return {k: v for k, v in mapping.items() if v in allowed_categories}
+
+    def get_categories(self):
+        return set(self._mapping.values())
+
+    def __getitem__(self, key: str):
+        k = self._keytransform(key)
+        if k in self._mapping:
+            return self._mapping[k]
+        return None
+
+    def __setitem__(self, key: str, value: str):
+        self._mapping[self._keytransform(key)] = value
+
+    def __delitem__(self, key: str):
+        del self._mapping[self._keytransform(key)]
+
+    def __iter__(self):
+        return iter(self._mapping)
+
+    def __len__(self):
+        return len(self._mapping)
+
+    def _keytransform(self, key: str):
+        return key.lower()
+
+
+class WordnetMapping(MutableMapping):
+
+    _mapping: Dict[str, str]
+
+    def __init__(
+        self,
+        mapping_file: str,
+        allowed_categories: Optional[Set[str]] = None,
+    ) -> None:
+        self._mapping = self.limit_mapping(
+            self.load_categories(mapping_file),
+            allowed_categories,
+        )
+
+    @staticmethod
+    def load_categories(
+        mapping_file: str
+    ) -> Dict[str, str]:
+        wordnet_mapping = load_json(mapping_file)
+        return wordnet_mapping
 
     @staticmethod
     def limit_mapping(
