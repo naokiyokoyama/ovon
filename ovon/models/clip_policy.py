@@ -8,7 +8,9 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import (
+    build_rnn_state_encoder,
+)
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
@@ -134,7 +136,6 @@ class PointNavResNetCLIPNet(Net):
             self.prev_action_embedding = nn.Linear(
                 num_actions, self._n_prev_action
             )
-        self._n_prev_action = 32
         rnn_input_size = self._n_prev_action  # test
 
         self.visual_encoder = ResNetCLIPEncoder(
@@ -163,7 +164,10 @@ class PointNavResNetCLIPNet(Net):
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
             clip_embedding = 1024 if clip_model == "RN50" else 768
-            print("Clip embedding: {}, Add CLIP linear: {}".format(clip_embedding, add_clip_linear_projection))
+            print(
+                f"Clip embedding: {clip_embedding}, "
+                f"Add CLIP linear: {add_clip_linear_projection}"
+            )
             if self.add_clip_linear_projection:
                 self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
                 rnn_input_size += 256
@@ -226,8 +230,9 @@ class PointNavResNetCLIPNet(Net):
         x = []
         aux_loss_state = {}
         if not self.is_blind:
-            # We CANNOT use observations.get() here because self.visual_encoder(observations)
-            # is an expensive operation. Therefore, we need `# noqa: SIM401`
+            # We CANNOT use observations.get() here because
+            # self.visual_encoder(observations) is an expensive operation. Therefore,
+            # we need `# noqa: SIM401`
             if (  # noqa: SIM401
                 PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
                 in observations
@@ -248,7 +253,7 @@ class PointNavResNetCLIPNet(Net):
 
         if ClipObjectGoalSensor.cls_uuid in observations:
             object_goal = (
-                observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
+                observations[ClipObjectGoalSensor.cls_uuid].type(torch.float32)
             )
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
