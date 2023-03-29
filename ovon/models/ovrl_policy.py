@@ -9,7 +9,9 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import (
+    build_rnn_state_encoder,
+)
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 
@@ -53,6 +55,7 @@ class OVRLPolicyNet(Net):
         freeze_backbone: bool = True,
         run_type: str = "train",
         add_clip_linear_projection: bool = False,
+        num_environments: int = 1,
     ):
         super().__init__()
 
@@ -90,6 +93,8 @@ class OVRLPolicyNet(Net):
             resnet_ngroups=resnet_baseplanes // 2,
             avgpooled_image=avgpooled_image,
             drop_path_rate=drop_path_rate,
+            visual_transform=self.visual_transform,
+            num_environments=num_environments,
         )
 
         self.visual_fc = nn.Sequential(
@@ -203,10 +208,7 @@ class OVRLPolicyNet(Net):
                 ]
             else:
                 # visual encoder
-                rgb = observations["rgb"]
-
-                rgb = self.visual_transform(rgb, N)
-                visual_feats = self.visual_encoder(rgb)
+                visual_feats = self.visual_encoder(observations, N)
 
             visual_feats = self.visual_fc(visual_feats)
             aux_loss_state["perception_embed"] = visual_feats
@@ -285,6 +287,7 @@ class OVRLPolicy(NetPolicy):
         pretrained_encoder: str = None,
         freeze_backbone: bool = False,
         add_clip_linear_projection: bool = False,
+        num_environments: int = 1,
         run_type: str = "train",
     ):
         if policy_config is not None:
@@ -322,6 +325,7 @@ class OVRLPolicy(NetPolicy):
                 freeze_backbone=freeze_backbone,
                 run_type=run_type,
                 add_clip_linear_projection=add_clip_linear_projection,
+                num_environments=num_environments,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -376,4 +380,5 @@ class OVRLPolicy(NetPolicy):
             pretrained_encoder=config.habitat_baselines.rl.policy.pretrained_encoder,
             freeze_backbone=config.habitat_baselines.rl.policy.freeze_backbone,
             add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
+            num_environments=config.habitat_baselines.num_environments,
         )
