@@ -72,63 +72,106 @@ def setup(scene):
     return sim
 
 
-def visualize_episodes(sim, dataset, object_category):
-    top_down_map = None
+def visualize_episodes(sim, dataset, object_category, goal_category_id):
+    top_down_maps = []
     episodes = dataset["episodes"]
-    goals_by_category = dataset["goals_by_category"]
-    ref_floor_height = None
+    goals = dataset["goals_by_category"][goal_category_id]
+    ref_floor_height = episodes[0]["start_position"][1]
 
-    for episode in episodes:
-        if not ref_floor_height is None and not is_on_same_floor(
-            episode["start_position"][1], ref_floor_height
-        ):
-            continue
-        if episode["object_category"] != object_category:
-            continue
+    grouped_goal_heights = []
+    grouped_goals = []
 
-        if top_down_map is None:
-            top_down_map = maps.get_topdown_map(
-                sim.pathfinder,
-                height=episode["start_position"][1],
-                map_resolution=MAP_RESOLUTION,
-                draw_border=True,
-            )
-            ref_floor_height = episode["start_position"][1]
+    for i in range(len(goals)):
+        goal = goals[i]
+        group_exists = False
+        for idx, heights in enumerate(grouped_goal_heights):
+            if is_on_same_floor(goal["position"][1], heights[0]):
+                group_exists = True
+                grouped_goal_heights[idx].append(goal["position"][1])
+                grouped_goals[idx].append(goal)
+                break
+        if not group_exists:
+            grouped_goal_heights.append([goal["position"][1]])
+            grouped_goals.append([goal])
 
-        draw_point(
-            sim,
-            top_down_map,
-            episode["start_position"],
-            maps.MAP_SOURCE_POINT_INDICATOR,
+    print("Category: {}".format(object_category))
+    print(
+        "Grouped goals: {}, goals: {}".format(
+            [len(g) for g in grouped_goals], len(goals)
         )
+    )
 
-    for goal_category, goals in goals_by_category.items():
-        if object_category in goal_category:
-            for goal in goals:
-                if not is_on_same_floor(goal["position"][1], ref_floor_height):
-                    continue
+    for grouped_goal in grouped_goals:
+        ref_floor_height = grouped_goal[0]["position"][1]
+        top_down_map = None
+
+        for goal in grouped_goal:
+            if top_down_map is None:
+                top_down_map = maps.get_topdown_map(
+                    sim.pathfinder,
+                    height=goal["view_points"][0]["agent_state"]["position"][
+                        1
+                    ],
+                    map_resolution=MAP_RESOLUTION,
+                    draw_border=True,
+                )
+
+            top_down_map = draw_point(
+                sim,
+                top_down_map,
+                goal["position"],
+                maps.MAP_TARGET_POINT_INDICATOR,
+                point_padding=6,
+            )
+            for view_point in goal["view_points"]:
                 top_down_map = draw_point(
                     sim,
                     top_down_map,
-                    goal["position"],
-                    maps.MAP_TARGET_POINT_INDICATOR,
-                    point_padding=6,
-                )
-                for view_point in goal["view_points"]:
-                    top_down_map = draw_point(
-                        sim,
-                        top_down_map,
-                        view_point["agent_state"]["position"],
-                        maps.MAP_VIEW_POINT_INDICATOR,
-                    )
-
-                draw_bounding_box(
-                    sim, top_down_map, goal["object_id"], ref_floor_height
+                    view_point["agent_state"]["position"],
+                    maps.MAP_VIEW_POINT_INDICATOR,
                 )
 
-    top_down_map = maps.colorize_topdown_map(top_down_map)
+            draw_bounding_box(
+                sim, top_down_map, goal["object_id"], ref_floor_height
+            )
 
-    return top_down_map
+        for episode in episodes:
+            if episode["object_category"] != object_category:
+                continue
+
+            if not is_on_same_floor(
+                episode["start_position"][1], ref_floor_height
+            ):
+                continue
+
+            if top_down_map is None:
+                top_down_map = maps.get_topdown_map(
+                    sim.pathfinder,
+                    height=episode["start_position"][1],
+                    map_resolution=MAP_RESOLUTION,
+                    draw_border=True,
+                )
+
+            draw_point(
+                sim,
+                top_down_map,
+                episode["start_position"],
+                maps.MAP_SOURCE_POINT_INDICATOR,
+            )
+
+        if top_down_map is None:
+            continue
+
+        top_down_map = maps.colorize_topdown_map(top_down_map)
+        top_down_maps.append(top_down_map)
+
+    print(
+        "Grouped goals: {}, top down maps: {}".format(
+            len(grouped_goals), len(top_down_maps)
+        )
+    )
+
+    return top_down_maps[0]
 
 
 def save_visual(img, path):
@@ -137,15 +180,21 @@ def save_visual(img, path):
 
 def visualize(episodes_path, output_path):
     dataset = load_dataset(episodes_path)
+
     sim = setup(dataset["episodes"][0]["scene_id"])
     categories = dataset["goals_by_category"].keys()
     for category in categories:
-        print(category)
         top_down_map = visualize_episodes(
-            sim, dataset, object_category=category.split("_")[1]
+            sim,
+            dataset,
+            object_category=category.split("_")[1],
+            goal_category_id=category,
         )
-        break
-    save_visual(top_down_map, output_path)
+        object_output_path = os.path.join(
+            output_path, "{}.png".format(category)
+        )
+        print(object_output_path, category)
+        save_visual(top_down_map, object_output_path)
 
 
 if __name__ == "__main__":
