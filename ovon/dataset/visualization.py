@@ -30,7 +30,9 @@ def obs_to_frame(obs):
     dmap_colored = cv2.applyColorMap(dmap, cv2.COLORMAP_VIRIDIS)
 
     semantic_obs = obs["semantic_sensor"]
-    semantic_img = Image.new("P", (semantic_obs.shape[1], semantic_obs.shape[0]))
+    semantic_img = Image.new(
+        "P", (semantic_obs.shape[1], semantic_obs.shape[0])
+    )
     semantic_img.putpalette(d3_40_colors_rgb.flatten())
     semantic_img.putdata((semantic_obs.flatten() % 40).astype(np.uint8))
     semantic_img = semantic_img.convert("RGB")
@@ -64,23 +66,35 @@ def get_bounding_box(
     objectList: List[SemanticObject],
 ):
     """Return the image with bounding boxes drawn on objects inside objectList"""
-    N, H, W = len(objectList), obs["semantic"].shape[0], obs["semantic"].shape[1]
+    N, H, W = (
+        len(objectList),
+        obs["semantic"].shape[0],
+        obs["semantic"].shape[1],
+    )
     masks = np.zeros((N, H, W))
     for i, object in enumerate(objectList):
-        masks[i] = (obs["semantic"] == np.array([[(object.semantic_id)]])).reshape(
-            (1, H, W)
-        )
+        masks[i] = (
+            obs["semantic"] == np.array([[(object.semantic_id)]])
+        ).reshape((1, H, W))
 
     boxes = masks_to_boxes(torch.from_numpy(masks))
-    area = 0
+    area = []
     for box in boxes:
-        area += (box[2] - box[0]) * (box[3] - box[1])
-    img = Image.fromarray(obs["rgb"][:, :, :3], "RGB")
-    drawn_img = draw_bounding_boxes(PILToTensor()(img), boxes, colors="red", width=3)
-    return drawn_img, boxes, area.cpu().detach().numpy() / (H * W)
+        area.append(
+            ((box[2] - box[0]) * (box[3] - box[1])).cpu().detach().numpy()
+            / (H * W)
+        )
+    img = Image.fromarray(obs["color"][:, :, :3], "RGB")
+    drawn_img = draw_bounding_boxes(
+        PILToTensor()(img), boxes, colors="red", width=3
+    )
+    boxes = boxes.cpu().detach().numpy()
+    return drawn_img, boxes, area
 
 
-def _get_iou_pose(sim: Simulator, pose: AgentState, objectList: List[SemanticObject]):
+def _get_iou_pose(
+    sim: Simulator, pose: AgentState, objectList: List[SemanticObject]
+):
     """Get coverage of all the objects in the objectList"""
     agent = sim.get_agent(0)
     agent.set_state(pose)
@@ -99,7 +113,9 @@ def get_best_viewpoint_with_posesampler(
     pose_sampler: PoseSampler,
     objectList: List[SemanticObject],
 ):
-    search_center = np.mean(np.array([obj.aabb.center for obj in objectList]), axis=0)
+    search_center = np.mean(
+        np.array([obj.aabb.center for obj in objectList]), axis=0
+    )
     candidate_states = pose_sampler.sample_agent_poses_radially(search_center)
     candidate_poses_ious = list(
         _get_iou_pose(sim, pos, objectList) for pos, _ in candidate_states
