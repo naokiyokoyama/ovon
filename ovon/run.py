@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 import os
 import os.path as osp
 
+import torch
 from habitat import get_config
 from habitat.config import read_write
 from habitat.config.default_structured_configs import register_hydra_plugin
@@ -62,6 +64,13 @@ def main():
         help="If set, no cameras will be used.",
     )
     parser.add_argument(
+        "--checkpoint-config",
+        "-c",
+        action="store_true",
+        help="If set, checkpoint's config will be used, but overrides WILL be applied. "
+        "Does nothing when training; meant for using ckpt config + overrides for eval.",
+    )
+    parser.add_argument(
         "opts",
         default=None,
         nargs=argparse.REMAINDER,
@@ -73,11 +82,58 @@ def main():
     register_plugins()
 
     config = get_config(args.exp_config, args.opts)
+
+    if args.run_type == "eval" and args.checkpoint_config:
+        config = merge_config(config, args.opts)
+
     with read_write(config):
         edit_config(config, args)
 
     # print(OmegaConf.to_yaml(config))
     execute_exp(config, args.run_type)
+
+
+def merge_config(config, opts):
+    """There might be a better way to do this with Hydra... do I know it? No.
+    1. Locate a checkpoint using the config's eval checkpoint path
+    2. Load that checkpoint's config to replicate training config
+    3. Save this config to a temporary file
+    4. Use the path to the temporary file and the given override opts
+
+    This is the only way to add overrides in eval that also use whatever overrides were
+    used in training.
+    """
+    # 1. Locate a checkpoint using the config
+    checkpoint_path = config.habitat_baselines.eval_ckpt_path_dir
+    if osp.isdir(checkpoint_path):
+        ckpt_files = glob.glob(osp.join(checkpoint_path, "*.pth"))
+        assert (
+            len(ckpt_files) > 0
+        ), f"No checkpoints found in {checkpoint_path}!"
+        checkpoint_path = ckpt_files[0]
+    elif not osp.isfile(checkpoint_path):
+        raise ValueError(f"Checkpoint path {checkpoint_path} is not a file!")
+
+    # 2. Load the config from the checkpoint
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    ckpt_config = ckpt["config"]
+
+    # 3. Save the given config to a temporary file
+    randstr = str(torch.randint(0, 100000, (1,)).item())
+    tmp_config_path = f"/tmp/ovon_config_{randstr}.yaml"
+    OmegaConf.save(ckpt_config, tmp_config_path)
+
+    # 4. Use the path to the temporary file as the config path and use the given opts to
+    # override the config
+    config = get_config(tmp_config_path, opts)
+    os.remove(tmp_config_path)
+
+    # Set load_resume_state_config to False so we don't load the checkpoint's config
+    # again and lose the overrides
+    with read_write(config):
+        config.habitat_baselines.load_resume_state_config = False
+
+    return config
 
 
 def edit_config(config, args):
