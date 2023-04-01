@@ -30,6 +30,7 @@ from ovon.dataset.semantic_utils import (
     WordnetMapping,
     get_hm3d_semantic_scenes,
 )
+from ovon.utils.utils import is_on_same_floor
 
 
 class ObjectGoalGenerator:
@@ -277,6 +278,7 @@ class ObjectGoalGenerator:
             [vp["agent_state"]["position"] for vp in goal["view_points"]]
             for goal in goals
         ]
+        goal_heights = [goal["position"][1] for goal in goals]
         start_positions = []
         start_rotations = []
 
@@ -301,6 +303,15 @@ class ObjectGoalGenerator:
                     sim.pathfinder.island_radius(start_position)
                     < self.ISLAND_RADIUS_LIMIT
                 ):
+                    continue
+
+                is_valid = False
+                for goal_height in goal_heights:
+                    if is_on_same_floor(start_position[1], goal_height):
+                        is_valid = True
+                        break
+
+                if not is_valid:
                     continue
 
                 closest_goals = []
@@ -681,7 +692,7 @@ def make_episodes_for_scene(args):
         frame_cov_thresh=0.05,
         goal_vp_cell_size=0.1,
         goal_vp_max_dist=1.0,
-        start_poses_per_obj=500,
+        start_poses_per_obj=1000,
         start_poses_tilt_angle=30.0,
         start_distance_limits=(1.0, 30.0),
         min_geo_to_euc_ratio=1.05,
@@ -709,7 +720,7 @@ def make_episodes_for_split(
     outpath: str,
     num_scenes: str,
     tasks_per_gpu: int = 1,
-    multiprocessing: bool = False,
+    enable_multiprocessing: bool = False,
 ):
     scenes = list(
         get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
@@ -730,7 +741,7 @@ def make_episodes_for_split(
         order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
     )
 
-    if multiprocessing:
+    if enable_multiprocessing:
         gpus = len(GPUtil.getAvailable(limit=256))
         cpu_threads = gpus * 16
         print(
@@ -783,7 +794,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--multiprocessing",
-        dest="multiprocessing",
+        dest="enable_multiprocessing",
         action="store_true",
     )
 
@@ -794,5 +805,5 @@ if __name__ == "__main__":
         outpath,
         args.num_scenes,
         args.tasks_per_gpu,
-        args.multiprocessing,
+        args.enable_multiprocessing,
     )

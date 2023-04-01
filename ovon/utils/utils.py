@@ -49,8 +49,8 @@ def load_pickle(path):
     return data
 
 
-def is_on_same_floor(height, ref_floor_height, ceiling_height=0.25):
-    return ref_floor_height <= height < ref_floor_height + ceiling_height
+def is_on_same_floor(height, ref_floor_height, ceiling_height=0.5):
+    return (ref_floor_height - ceiling_height) <= height < (ref_floor_height + ceiling_height)
 
 
 def draw_point(sim, top_down_map, position, point_type, point_padding=2):

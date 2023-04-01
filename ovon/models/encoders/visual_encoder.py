@@ -1,6 +1,10 @@
+from typing import Any
+
 import numpy as np
 import torch
-from habitat_baselines.rl.ddppo.policy.running_mean_and_var import RunningMeanAndVar
+from habitat_baselines.rl.ddppo.policy.running_mean_and_var import (
+    RunningMeanAndVar,
+)
 from torch import nn as nn
 from torch.nn import functional as F
 
@@ -18,10 +22,14 @@ class VisualEncoder(nn.Module):
         normalize_visual_inputs: bool = True,
         avgpooled_image: bool = False,
         drop_path_rate: float = 0.0,
+        visual_transform: Any = None,
+        num_environments: int = 1,
     ):
         super().__init__()
         self.avgpooled_image = avgpooled_image
         self.is_blind = False
+        self.visual_transform = visual_transform
+        self.num_environments = num_environments
 
         if normalize_visual_inputs:
             self.running_mean_and_var: nn.Module = RunningMeanAndVar(
@@ -64,11 +72,19 @@ class VisualEncoder(nn.Module):
                 final_spatial,
                 final_spatial,
             )
+            self.output_shape = output_shape
             self.output_size = np.prod(output_shape)
         else:
             raise ValueError("unknown backbone {}".format(backbone))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore
+    def forward(self, observations: torch.Tensor, N: int = None) -> torch.Tensor:  # type: ignore
+        num_environments = self.num_environments
+        if N is not None:
+            num_environments = N
+
+        rgb = observations["rgb"]
+        x = self.visual_transform(rgb, num_environments)
+
         if (
             self.avgpooled_image
         ):  # For compatibility with the habitat_baselines implementation
