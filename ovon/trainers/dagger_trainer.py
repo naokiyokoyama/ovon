@@ -48,9 +48,9 @@ from habitat_baselines.utils.common import (
     inference_mode,
     is_continuous_action_space,
 )
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 
-from ovon.algos.dagger import DAgger, DAggerPolicy, DAggerPolicyConfig, DDPDAgger
+from ovon.algos.dagger import DAgger, DAggerPolicy, DDPDAgger
 from ovon.utils.dagger_environment_worker import construct_il_environment_workers
 
 try:
@@ -64,14 +64,12 @@ except AttributeError:
 @baseline_registry.register_trainer(name="ver_il")
 class VERDAggerTrainer(VERTrainer):
     def __init__(self, config: DictConfig):
-        keys = config.habitat_baselines.rl.policy.keys()
-        keys = [k for k in keys if k != "hierarchical_policy"]
-        kwargs = {k: config.habitat_baselines.rl.policy[k] for k in keys}
-        with read_write(config):
-            config.habitat_baselines.rl.policy = DAggerPolicyConfig(
-                **kwargs, original_name=config.habitat_baselines.rl.policy.name
-            )
-            config.habitat_baselines.rl.policy.name = DAggerPolicy.__name__
+        with read_write(config.habitat_baselines.rl.policy):  # allows writing
+            with open_dict(config.habitat_baselines.rl.policy):  # allows new keys
+                config.habitat_baselines.rl.policy[
+                    "original_name"
+                ] = config.habitat_baselines.rl.policy.name  # the new key
+                config.habitat_baselines.rl.policy.name = DAggerPolicy.__name__
         super().__init__(config)
         self.teacher_forcing = config.habitat_baselines.trainer_name == "ver_il"
 

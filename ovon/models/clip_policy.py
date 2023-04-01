@@ -1,3 +1,4 @@
+import os
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
@@ -18,6 +19,10 @@ from torch.nn import functional as F
 from torchvision import transforms as T
 from torchvision.transforms import functional as TF
 
+from ovon.models.encoders.clip_cross_attn import (
+    CLIPCrossAttentionEncoder,
+    forward_attn_avg_pool,
+)
 from ovon.task.sensors import ClipObjectGoalSensor
 
 
@@ -137,15 +142,22 @@ class PointNavResNetCLIPNet(Net):
                 num_actions, self._n_prev_action
             )
         rnn_input_size = self._n_prev_action  # test
+        rnn_input_size_info = {"prev_action": self._n_prev_action}
 
         self.visual_encoder = ResNetCLIPEncoder(
             observation_space,
-            pooling="avgpool" if "avgpool" in backbone else "attnpool",
+            backbone_type=backbone,
             clip_model=clip_model,
         )
         if not self.visual_encoder.is_blind:
+            visual_fc_in_size = self.visual_encoder.output_shape[0]
+            # If both attention and avgpool are used, only pass the avgpool through the
+            # visual_fc linear layer; attnpool output will be compared with CLIP text or
+            # passed directly to the state encoder.
+            if "attn_avg_pool" in backbone:
+                visual_fc_in_size -= 1024  # CLIP embedding size is 1024
             self.visual_fc = nn.Sequential(
-                nn.Linear(self.visual_encoder.output_shape[0], hidden_size),
+                nn.Linear(visual_fc_in_size, hidden_size),
                 nn.ReLU(True),
             )
         print("Obs space: {}".format(observation_space.spaces))
@@ -161,18 +173,35 @@ class PointNavResNetCLIPNet(Net):
                 self._n_object_categories, 32
             )
             rnn_input_size += 32
+            rnn_input_size_info["object_goal"] = 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
-            clip_embedding = 1024 if clip_model == "RN50" else 768
-            print(
-                f"Clip embedding: {clip_embedding}, "
-                f"Add CLIP linear: {add_clip_linear_projection}"
-            )
-            if self.add_clip_linear_projection:
-                self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-                rnn_input_size += 256
+            if self.visual_encoder.using_cross_mlp:
+                clip_object_goal_size = 32
             else:
-                rnn_input_size += clip_embedding
+                clip_embedding = 1024 if clip_model == "RN50" else 768
+                print(
+                    f"Clip embedding: {clip_embedding}, "
+                    f"Add CLIP linear: {add_clip_linear_projection}"
+                )
+                if self.add_clip_linear_projection:
+                    if os.environ.get("LINPROJ_DEBUG", "0") == "1":
+                        self.obj_categories_embedding = nn.Sequential(
+                            nn.Linear(clip_embedding, 512),
+                            nn.ReLU(True),
+                            nn.Linear(512, 32),
+                            nn.ReLU(True),
+                        )
+                        clip_object_goal_size = 32
+                    else:
+                        self.obj_categories_embedding = nn.Linear(
+                            clip_embedding, 256
+                        )
+                        clip_object_goal_size = 256
+                else:
+                    clip_object_goal_size = clip_embedding
+            rnn_input_size += clip_object_goal_size
+            rnn_input_size_info["clip_object_goal"] = clip_object_goal_size
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -180,6 +209,7 @@ class PointNavResNetCLIPNet(Net):
             ].shape[0]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["gps_embedding"] = 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
@@ -191,8 +221,40 @@ class PointNavResNetCLIPNet(Net):
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["compass_embedding"] = 32
+
+        # State encoder is directly fed CLIP rgb attn if both rgb attn and avgpool are
+        # used AND cross attention is NOT used to inject the rgb attn into the text
+        # embedding instead.
+        if (
+            not (
+                self.visual_encoder.using_cross_attn
+                or self.visual_encoder.using_cross_mlp
+            )
+            and self.visual_encoder.using_both_clip_attn_avg_pool
+        ):
+            if self.add_clip_linear_projection:
+                clip_attnpool_size = 256
+                self.clip_rgb_embedding = nn.Linear(1024, clip_attnpool_size)
+            else:
+                clip_attnpool_size = 1024
+            rnn_input_size += clip_attnpool_size
+            rnn_input_size_info["clip_attnpool"] = clip_attnpool_size
 
         self._hidden_size = hidden_size
+
+        rnn_input_size_info["visual_hidden_size"] = (
+            0 if self.is_blind else self._hidden_size
+        )
+
+        print("RNN input size info: ")
+        total = 0
+        for k, v in rnn_input_size_info.items():
+            print(f"  {k}: {v}")
+            total += v
+        total_str = f"  Total RNN input size: {total}"
+        print("  " + "-" * (len(total_str) - 2))
+        print(total_str)
 
         self.state_encoder = build_rnn_state_encoder(
             (0 if self.is_blind else self._hidden_size) + rnn_input_size,
@@ -229,6 +291,7 @@ class PointNavResNetCLIPNet(Net):
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         x = []
         aux_loss_state = {}
+        clip_rgb = None
         if not self.is_blind:
             # We CANNOT use observations.get() here because
             # self.visual_encoder(observations) is an expensive operation. Therefore,
@@ -237,24 +300,60 @@ class PointNavResNetCLIPNet(Net):
                 PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
                 in observations
             ):
-                visual_feats = observations[
+                raw_visual_feats = observations[
                     PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
                 ]
             else:
-                visual_feats = self.visual_encoder(observations)
+                raw_visual_feats = self.visual_encoder(observations)
 
-            visual_feats = self.visual_fc(visual_feats)
+            visual_fc_in = raw_visual_feats
+            if self.visual_encoder.using_both_clip_attn_avg_pool:
+                # Remove CLIP rgb attn from visual_fc_in
+                clip_rgb, visual_fc_in = (
+                    raw_visual_feats[:, :1024],
+                    raw_visual_feats[:, 1024:],
+                )
+            elif self.visual_encoder.using_only_clip_attnpool:
+                clip_rgb = raw_visual_feats
+
+            visual_feats = self.visual_fc(visual_fc_in)
             aux_loss_state["perception_embed"] = visual_feats
             x.append(visual_feats)
+
+        if (
+            not (
+                self.visual_encoder.using_cross_attn
+                or self.visual_encoder.using_cross_mlp
+            )
+            and self.visual_encoder.using_both_clip_attn_avg_pool
+        ):
+            assert clip_rgb is not None
+            if self.add_clip_linear_projection:
+                clip_rgb = self.clip_rgb_embedding(clip_rgb)
+            x.append(clip_rgb)
 
         if ObjectGoalSensor.cls_uuid in observations:
             object_goal = observations[ObjectGoalSensor.cls_uuid].long()
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
         if ClipObjectGoalSensor.cls_uuid in observations:
-            object_goal = (
-                observations[ClipObjectGoalSensor.cls_uuid].type(torch.float32)
+            object_goal = observations[ClipObjectGoalSensor.cls_uuid].type(
+                torch.float32
             )
+            if (
+                self.visual_encoder.using_cross_attn
+                or self.visual_encoder.using_cross_mlp
+            ):
+                assert clip_rgb is not None
+                if self.visual_encoder.using_cross_attn:
+                    object_goal = self.visual_encoder.clip_cross_attn(
+                        clip_rgb, object_goal
+                    )
+                else:
+                    object_goal = self.visual_encoder.clip_cross_mlp(
+                        torch.cat([clip_rgb, object_goal], dim=1)
+                    )
+
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
             x.append(object_goal)
@@ -298,11 +397,12 @@ class ResNetCLIPEncoder(nn.Module):
     def __init__(
         self,
         observation_space: spaces.Dict,
-        pooling="attnpool",
+        backbone_type: str,
         clip_model="RN50",
     ):
         super().__init__()
 
+        self.backbone_type = backbone_type
         self.rgb = "rgb" in observation_space.spaces
         self.depth = "depth" in observation_space.spaces
 
@@ -328,16 +428,51 @@ class ResNetCLIPEncoder(nn.Module):
             if self.rgb and self.depth:
                 self.backbone.attnpool = nn.Identity()
                 self.output_shape = (2048,)
-            elif pooling == "none":
+            elif self.using_only_clip_attnpool:
+                # Retains the final attention layer of CLIP visual model
+                self.output_shape = (1024,)
+            elif "none" in backbone_type:
+                # Removes the final attention layer of CLIP visual model
                 self.backbone.attnpool = nn.Identity()
                 self.output_shape = (2048, 7, 7)
-            elif pooling == "avgpool":
+            elif self.using_only_clip_avgpool:
+                # Replaces the final attention layer of CLIP visual model w/ avg pooling
                 self.backbone.attnpool = nn.Sequential(
                     nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten()
                 )
                 self.output_shape = (2048,)
+            elif self.using_both_clip_attn_avg_pool:
+                # Adds an avg pooling head in parallel to final attention layer
+                self.backbone.adaptive_avgpool = nn.Sequential(
+                    nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten()
+                )
+                self.output_shape = (1024 + 2048,)
+
+                # Overwrite forward method to return both attnpool and avgpool
+                # concatenated together (attnpool + avgpool).
+                bound_method = forward_attn_avg_pool.__get__(
+                    self.backbone, self.backbone.__class__
+                )
+                setattr(self.backbone, "forward", bound_method)
             else:
-                self.output_shape = (1024,)
+                raise NotImplementedError(
+                    f"Backbone type {backbone_type} not implemented"
+                )
+
+            if self.using_cross_attn:
+                # Adds cross attention layer to compare curr/goal CLIP embeddings.
+                # Output size is also 1024. If used, its output is sent to the state
+                # encoder INSTEAD of the CLIP text (goal) embedding.
+                self.clip_cross_attn = CLIPCrossAttentionEncoder()
+            elif self.using_cross_mlp:
+                # Adds two-layer mlp with sizes 512 and 32 that compares the
+                # curr/goal CLIP embeddings. Output size is 32.
+                self.clip_cross_mlp = nn.Sequential(
+                    nn.Linear(1024 * 2, 512),
+                    nn.ReLU(),
+                    nn.Linear(512, 32),
+                    nn.ReLU(),
+                )
 
             for param in self.backbone.parameters():
                 param.requires_grad = False
@@ -349,6 +484,26 @@ class ResNetCLIPEncoder(nn.Module):
     @property
     def is_blind(self):
         return self.rgb is False and self.depth is False
+
+    @property
+    def using_cross_attn(self):
+        return "crossattn" in self.backbone_type
+
+    @property
+    def using_cross_mlp(self):
+        return "crossmlp" in self.backbone_type
+
+    @property
+    def using_only_clip_attnpool(self):
+        return "attnpool" in self.backbone_type
+
+    @property
+    def using_only_clip_avgpool(self):
+        return "avgpool" in self.backbone_type
+
+    @property
+    def using_both_clip_attn_avg_pool(self):
+        return "attn_avg_pool" in self.backbone_type
 
     def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
         if self.is_blind:
@@ -363,7 +518,7 @@ class ResNetCLIPEncoder(nn.Module):
             rgb_observations = torch.stack(
                 [self.preprocess(rgb_image) for rgb_image in rgb_observations]
             )  # [BATCH x CHANNEL x HEIGHT X WIDTH] in torch.float32
-            rgb_x = self.backbone(rgb_observations).float()
+            rgb_x = self.backbone(rgb_observations).type(torch.float32)
             cnn_input.append(rgb_x)
 
         if self.depth:
