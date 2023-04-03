@@ -1,3 +1,4 @@
+import glob
 import gzip
 import json
 import os
@@ -7,6 +8,7 @@ import numpy as np
 import torch
 from habitat.utils.visualizations import maps
 from PIL import Image
+from tqdm import tqdm
 
 from ovon.models.encoders.resnet_gn import ResNet
 
@@ -126,3 +128,12 @@ def load_encoder(encoder, path):
         return encoder.load_state_dict(state_dict=state_dict, strict=False)
     else:
         raise ValueError("unknown encoder backbone")
+
+
+def count_episodes(path):
+    files = glob.glob(os.path.join(path, "*.json.gz"))
+    count = 0
+    for f in tqdm(files):
+        dataset = load_dataset(f)
+        count += len(dataset["episodes"])
+    print("Total episodes: {}".format(count))

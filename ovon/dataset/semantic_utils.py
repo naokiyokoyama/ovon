@@ -19,12 +19,14 @@ class ObjectCategoryMapping(MutableMapping):
         allowed_categories: Optional[Set[str]] = None,
         coverage_meta_file: Optional[str] = None,
         frame_coverage_threshold: Optional[float] = None,
+        blacklist_file: Optional[str] = "data/hm3d_meta/blacklist.txt",
     ) -> None:
         self._mapping = self.limit_mapping(
             self.load_categories(
                 mapping_file, coverage_meta_file, frame_coverage_threshold
             ),
             allowed_categories,
+            blacklist_file,
         )
 
     @staticmethod
@@ -95,10 +97,16 @@ class ObjectCategoryMapping(MutableMapping):
 
     @staticmethod
     def limit_mapping(
-        mapping: Dict[str, str], allowed_categories: Optional[Set[str]] = None
+        mapping: Dict[str, str], allowed_categories: Optional[Set[str]] = None, blacklist_file: Optional[str] = None
     ) -> Dict[str, str]:
+
+        if blacklist_file is not None:
+            blacklist = [line.strip() for line in open(blacklist_file, "r").readlines()]
+            mapping = {k: v for k, v in mapping.items() if k not in blacklist}
+
         if allowed_categories is None:
             return mapping
+
         return {k: v for k, v in mapping.items() if v in allowed_categories}
 
     def get_categories(self):

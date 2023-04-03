@@ -4,32 +4,28 @@ import gzip
 import itertools
 import multiprocessing
 import os
+import random
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import GPUtil
 import habitat
 import habitat_sim
 import numpy as np
-from habitat.tasks.nav.object_nav_task import ObjectGoalNavEpisode
 from habitat_sim import bindings as hsim
 from habitat_sim._ext.habitat_sim_bindings import SemanticObject
-from habitat_sim.agent.agent import AgentConfiguration, AgentState, SixDOFPose
+from habitat_sim.agent.agent import AgentConfiguration, AgentState
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_two_vectors, quat_to_coeffs
 from numpy import ndarray
-
 # from ovon.dataset.visualization import plot_area  # noqa:F401
 # from ovon.dataset.visualization import save_candidate_imgs
 from tqdm import tqdm
 
 from ovon.dataset.ovon_dataset import OVONEpisode
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (
-    ObjectCategoryMapping,
-    WordnetMapping,
-    get_hm3d_semantic_scenes,
-)
+from ovon.dataset.semantic_utils import (ObjectCategoryMapping, WordnetMapping,
+                                         get_hm3d_semantic_scenes)
 from ovon.utils.utils import is_on_same_floor
 
 
@@ -606,7 +602,7 @@ class ObjectGoalGenerator:
             children_object_categories=children_object_categories,
         )
 
-    def make_episodes(self, object_goals, scene):
+    def make_episodes(self, object_goals: Dict, scene: str, episodes_per_scene: int = -1):
         dataset = habitat.datasets.make_dataset("ObjectNav-v1")
         dataset.category_to_task_category_id = {}
         dataset.category_to_scene_annotation_category_id = {}
@@ -661,12 +657,27 @@ class ObjectGoalGenerator:
                 )
                 dataset.episodes.append(episode)
                 episode_count += 1
+
+            # Clean up children object categories            
+            for o_g in goal["object_goals"]:
+                del o_g["children_object_categories"]
+            
+            if episodes_per_scene > 0:
+                dataset.episodes = random.sample(dataset.episodes, episodes_per_scene)
+
         dataset.goals_by_category = goals_by_category
         return dataset
 
 
 def make_episodes_for_scene(args):
-    scene, outpath, device_id = args
+    ( 
+        scene,
+        outpath,
+        device_id,
+        split,
+        episodes_per_object,
+        episodes_per_scene
+    ) = args
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
 
@@ -688,11 +699,11 @@ def make_episodes_for_scene(args):
         },
         mapping_file="ovon/dataset/source_data/Mp3d_category_mapping.tsv",
         categories=None,
-        coverage_meta_file="data/coverage_meta/train.pkl",
+        coverage_meta_file="data/coverage_meta/{}.pkl".format(split),
         frame_cov_thresh=0.05,
         goal_vp_cell_size=0.1,
         goal_vp_max_dist=1.0,
-        start_poses_per_obj=1000,
+        start_poses_per_obj=episodes_per_object,
         start_poses_tilt_angle=30.0,
         start_distance_limits=(1.0, 30.0),
         min_geo_to_euc_ratio=1.05,
@@ -721,15 +732,15 @@ def make_episodes_for_split(
     num_scenes: str,
     tasks_per_gpu: int = 1,
     enable_multiprocessing: bool = False,
+    episodes_per_object: int = 2000,
+    episodes_per_scene: int = 50000,
 ):
     scenes = list(
         get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
     )[:num_scenes]
     print(scenes)
 
-    dataset = habitat.datasets.make_dataset("ObjectNav-v1")
-    dataset.category_to_task_category_id = {}
-    dataset.category_to_scene_annotation_category_id = {}
+    dataset = habitat.datasets.make_dataset("OVON-v1")
 
     os.makedirs(outpath.format(split), exist_ok=True)
     save_to = os.path.join(
@@ -755,7 +766,7 @@ def make_episodes_for_split(
             deviceId = deviceIds[0]
             if i < gpus * tasks_per_gpu or len(deviceIds) == 0:
                 deviceId = i % gpus
-            items.append((s, outpath.format(split), deviceId))
+            items.append((s, outpath.format(split), deviceId, split, episodes_per_object, episodes_per_scene))
 
         mp_ctx = multiprocessing.get_context("forkserver")
         with mp_ctx.Pool(cpu_threads) as pool, tqdm(
@@ -797,6 +808,16 @@ if __name__ == "__main__":
         dest="enable_multiprocessing",
         action="store_true",
     )
+    parser.add_argument(
+        "--episodes-per-scene",
+        type=int,
+        default=-1,
+    )
+    parser.add_argument(
+        "--episodes-per-object",
+        type=int,
+        default=2000,
+    )
 
     args = parser.parse_args()
     outpath = os.path.join(args.output_path, "{}/content/".format(args.split))
@@ -806,4 +827,6 @@ if __name__ == "__main__":
         args.num_scenes,
         args.tasks_per_gpu,
         args.enable_multiprocessing,
+        args.episodes_per_object,
+        args.episodes_per_scene,
     )
