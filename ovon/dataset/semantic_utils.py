@@ -5,6 +5,7 @@ import pickle
 from collections import defaultdict
 from collections.abc import MutableMapping
 from typing import Dict, Iterable, List, Optional, Set
+import numpy as np
 
 
 class Relationship:
@@ -18,6 +19,8 @@ class Relationship:
     cov: float
     area: float
     img_ref: str
+    name: str
+    bb: np.ndarray
 
 
 class ObjectCategoryMapping(MutableMapping):
@@ -29,12 +32,14 @@ class ObjectCategoryMapping(MutableMapping):
         allowed_categories: Optional[Set[str]] = None,
         coverage_meta_file: Optional[str] = None,
         frame_coverage_threshold: Optional[float] = None,
+        blacklist_file: Optional[str] = "data/hm3d_meta/blacklist.txt",
     ) -> None:
         self._mapping = self.limit_mapping(
             self.load_categories(
                 mapping_file, coverage_meta_file, frame_coverage_threshold
             ),
             allowed_categories,
+            blacklist_file,
         )
 
     @staticmethod
@@ -104,10 +109,19 @@ class ObjectCategoryMapping(MutableMapping):
 
     @staticmethod
     def limit_mapping(
-        mapping: Dict[str, str], allowed_categories: Optional[Set[str]] = None
+        mapping: Dict[str, str],
+        allowed_categories: Optional[Set[str]] = None,
+        blacklist_file: Optional[str] = None,
     ) -> Dict[str, str]:
+        if blacklist_file is not None:
+            blacklist = [
+                line.strip() for line in open(blacklist_file, "r").readlines()
+            ]
+            mapping = {k: v for k, v in mapping.items() if k not in blacklist}
+
         if allowed_categories is None:
             return mapping
+
         return {k: v for k, v in mapping.items() if v in allowed_categories}
 
     def get_categories(self):
@@ -133,6 +147,10 @@ class ObjectCategoryMapping(MutableMapping):
 
     def _keytransform(self, key: str):
         return key.lower()
+
+
+class WordnetMapping(MutableMapping):
+    _mapping: Dict[str, str]
 
 
 class SceneRelationshipsMapping(MutableMapping):
@@ -222,5 +240,7 @@ if __name__ == "__main__":
     print(cat_map.get_categories())
     print("category of `armchair`:", cat_map["armchair"])
 
-    s = get_hm3d_semantic_scenes("habitat-sim/data/scene_datasets/hm3d")
+    s = get_hm3d_semantic_scenes(
+        "/nethome/akutumbaka3/files/ovonproject/data/scene_data/hm3d"
+    )
     print(s["minival"])

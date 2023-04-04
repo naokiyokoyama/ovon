@@ -137,6 +137,7 @@ class PointNavResNetCLIPNet(Net):
                 num_actions, self._n_prev_action
             )
         rnn_input_size = self._n_prev_action  # test
+        rnn_input_size_info = {"prev_action": self._n_prev_action}
 
         self.visual_encoder = ResNetCLIPEncoder(
             observation_space,
@@ -161,6 +162,7 @@ class PointNavResNetCLIPNet(Net):
                 self._n_object_categories, 32
             )
             rnn_input_size += 32
+            rnn_input_size_info["object_goal"] = 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
             clip_embedding = 1024 if clip_model == "RN50" else 768
@@ -170,9 +172,11 @@ class PointNavResNetCLIPNet(Net):
             )
             if self.add_clip_linear_projection:
                 self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-                rnn_input_size += 256
+                object_goal_size = 256
             else:
-                rnn_input_size += clip_embedding
+                object_goal_size = clip_embedding
+            rnn_input_size += object_goal_size
+            rnn_input_size_info["clip_object_goal"] = object_goal_size
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -180,6 +184,7 @@ class PointNavResNetCLIPNet(Net):
             ].shape[0]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["gps_embedding"] = 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
@@ -191,11 +196,27 @@ class PointNavResNetCLIPNet(Net):
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["compass_embedding"] = 32
+
+        if not self.is_blind:
+            rnn_input_size += hidden_size
+            rnn_input_size_info["visual_feats"] = hidden_size
 
         self._hidden_size = hidden_size
 
+        print("RNN input size info: ")
+        total = 0
+        for k, v in rnn_input_size_info.items():
+            print(f"  {k}: {v}")
+            total += v
+        if total - rnn_input_size != 0:
+            print(f"  UNACCOUNTED: {total - rnn_input_size}")
+        total_str = f"  Total RNN input size: {total}"
+        print("  " + "-" * (len(total_str) - 2))
+        print(total_str)
+
         self.state_encoder = build_rnn_state_encoder(
-            (0 if self.is_blind else self._hidden_size) + rnn_input_size,
+            rnn_input_size,
             self._hidden_size,
             rnn_type=rnn_type,
             num_layers=num_recurrent_layers,
@@ -252,8 +273,8 @@ class PointNavResNetCLIPNet(Net):
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
         if ClipObjectGoalSensor.cls_uuid in observations:
-            object_goal = (
-                observations[ClipObjectGoalSensor.cls_uuid].type(torch.float32)
+            object_goal = observations[ClipObjectGoalSensor.cls_uuid].type(
+                torch.float32
             )
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)

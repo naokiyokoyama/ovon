@@ -19,6 +19,14 @@ export MAGNUM_LOG=quiet
 MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
 export MAIN_ADDR
 
+SPLIT=$1
+NUM_TASKS=$2
+NUM_SCENES=-1
+
 srun python ovon/dataset/objectnav_generator.py \
-  --split train \
-  --num-scenes -1
+  --split $SPLIT \
+  --num-scenes $NUM_SCENES \
+  --tasks-per-gpu $NUM_TASKS \
+  --episodes-per-object 200 \
+  --episodes-per-scene 50 \
+  --multiprocessing

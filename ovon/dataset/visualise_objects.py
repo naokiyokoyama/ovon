@@ -4,22 +4,31 @@ import os
 import os.path as osp
 import pickle
 from typing import Dict, List, Union
+import multiprocessing
+import openai
 
 import GPUtil
 import habitat
 import habitat_sim
 import numpy as np
 from habitat.config.default import get_agent_config, get_config
-from habitat.config.default_structured_configs import HabitatSimSemanticSensorConfig
+from habitat.config.default_structured_configs import (
+    HabitatSimSemanticSensorConfig,
+)
 from habitat.config.read_write import read_write
 from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
 from habitat_sim.agent.agent import Agent, AgentState
 from habitat_sim.simulator import Simulator
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import get_hm3d_semantic_scenes
+from ovon.dataset.semantic_utils import (
+    get_hm3d_semantic_scenes,
+    ObjectCategoryMapping,
+)
+from ovon.dataset.generate_viewpoints import config_sim
 from ovon.dataset.visualization import (
     get_best_viewpoint_with_posesampler,
     get_bounding_box,
+    get_color, get_depth
 )
 from torchvision.transforms import ToPILImage
 from tqdm import tqdm
@@ -137,68 +146,8 @@ def create_html(
     f.close()
 
 
-def is_on_ceiling(sim: Simulator, aabb: BBox):
-    point = np.asarray(aabb.center)
-    snapped = sim.pathfinder.snap_point(point)
-
-    # The snapped point is on the floor above
-    # It is more than 20 cms above the object's upper edge
-    if snapped[1] > point[1] + aabb.sizes[0] / 2 + 0.20:
-        return True
-
-    # Snapped point is on the ground
-    if snapped[1] < point[1] - 1.5:
-        return True
-    return False
-
-
-def get_objects(
-    sim: Simulator,
-    objects_info: List[SemanticObject],
-    scene_key: str,
-    obj_mapping: Dict,
-    pose_sampler: PoseSampler,
-) -> None:
-    objects_visualized = []
-    cnt = 0
-    agent = sim.get_agent(0)
-
-    filtered_objects = [
-        obj for obj in objects_info if obj.category.name() in FILTERED_CATEGORIES
-    ]
-    if not osp.isdir(f"data/images/objects/{scene_key}"):
-        os.mkdir(f"data/images/objects/{scene_key}")
-
-    for object in filtered_objects:
-        name = object.category.name().replace("/", " ")
-        if is_on_ceiling(sim, object.aabb):
-            continue
-
-        check, view = get_best_viewpoint_with_posesampler(sim, pose_sampler, object)
-        if check:
-            cov, pose, _ = view
-            agent.set_state(pose)
-            obs = sim.get_sensor_observations()
-            drawn_img, fraction = get_bounding_box(obs, object)
-            if fraction > 0 and (
-                name not in obj_mapping
-                or scene_key not in obj_mapping[name]
-                or cov > obj_mapping[name][scene_key][0]
-            ):
-                # Add object visualization to mapping
-                if name not in obj_mapping.keys():
-                    obj_mapping[name] = {}
-                obj_mapping[name][scene_key] = (np.sum(cov), fraction)
-
-                (ToPILImage()(drawn_img)).convert("RGB").save(
-                    f"data/images/objects/{scene_key}/{name}.png"
-                )
-                objects_visualized.append(object.category.name().strip())
-                cnt += 1
-
-    print(
-        f"Visualised {cnt} number of objects for scene {scene_key} out of total {len(filtered_objects)}!"
-    )
+def save_img(img, path):
+    (ToPILImage()(img)).convert("RGB").save(path)
 
 
 def get_objnav_config(i: int, scene: str):
@@ -215,7 +164,6 @@ def get_objnav_config(i: int, scene: str):
 
         sensor_pos = [0, 1.31, 0]
 
-        del agent_config.sim_sensors["depth_sensor"]
         agent_config.sim_sensors.update(
             {"semantic_sensor": HabitatSimSemanticSensorConfig()}
         )
@@ -247,7 +195,9 @@ def get_objnav_config(i: int, scene: str):
 
 
 def get_simulator(objnav_config) -> Simulator:
-    sim = habitat.sims.make_sim("Sim-v0", config=objnav_config.habitat.simulator)
+    sim = habitat.sims.make_sim(
+        "Sim-v0", config=objnav_config.habitat.simulator
+    )
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()
     navmesh_settings.agent_radius = (
@@ -260,61 +210,210 @@ def get_simulator(objnav_config) -> Simulator:
     return sim
 
 
-def main():
-    if not os.path.isfile(f"data/object_images_{split}.pickle"):
-        object_map = {}  # map between object instance -> (coverage, scene)
-        # sort for each object and generate 4-5 visualisation
-        HM3D_SCENES = get_hm3d_semantic_scenes("data/scene_datasets/hm3d")
-        for i, scene in tqdm(enumerate(list(HM3D_SCENES[split]))):
-            scene_key = os.path.basename(scene).split(".")[0]
-            cfg = get_objnav_config(i, scene_key)
-            sim = get_simulator(cfg)
-            objects_info = sim.semantic_scene.objects
-            pose_sampler = PoseSampler(
-                sim=sim,
-                r_min=0.5,
-                r_max=2.0,
-                r_step=0.5,
-                rot_deg_delta=10.0,
-                h_min=0.8,
-                h_max=1.4,
-                sample_lookat_deg_delta=5.0,
+def is_on_ceiling(sim: Simulator, aabb: BBox):
+    point = np.asarray(aabb.center)
+    snapped = sim.pathfinder.snap_point(point)
+
+    # The snapped point is on the floor above
+    # It is more than 20 cms above the object's upper edge
+    if snapped[1] > point[1] + aabb.sizes[0] / 2 + 0.20:
+        return True
+
+    # Snapped point is on the ground
+    if snapped[1] < point[1] - 1.5:
+        return True
+    return False
+
+
+def get_all_objects_in_view(obs, target_obj, threshold=0.01):
+    area = np.prod(obs["semantic"].shape)
+    obj_ids, num_pixels = np.unique(obs["semantic"], return_counts=True)
+    objects = [
+        obj_ids[i]
+        for i in range(len(num_pixels))
+        if num_pixels[i] / (area) > threshold and obj_ids[i] != target_obj
+    ]
+    return objects
+
+
+def get_objects_for_scene(args) -> None:
+    scene, outpath, device_id = args
+    scene_key = os.path.basename(scene).split(".")[0]
+
+    split = outpath
+
+    """
+    if os.path.isfile(os.path.join(outpath, f"meta/{scene_key}.pkl")):
+        return
+    """
+
+    cfg = get_objnav_config(device_id, scene_key)
+    sim = get_simulator(cfg)
+
+    objects_info = sim.semantic_scene.objects
+    objects_dict = {obj.semantic_id: obj for obj in objects_info}
+
+    pose_sampler = PoseSampler(
+        sim=sim,
+        r_min=1.0,
+        r_max=2.0,
+        r_step=0.5,
+        rot_deg_delta=10.0,
+        h_min=0.8,
+        h_max=1.4,
+        sample_lookat_deg_delta=5.0,
+    )
+
+    split = outpath.split("/")[-2]
+    print(split)
+    objects_visualized = []
+    cnt = 0
+    agent = sim.get_agent(0)
+
+    cat_map = ObjectCategoryMapping(
+        mapping_file="ovon/dataset/source_data/Mp3d_category_mapping.tsv",
+        allowed_categories=None,
+        coverage_meta_file="data/coverage_meta/{}.pkl".format(split),
+        frame_coverage_threshold=0.05,
+    )
+
+    os.makedirs(os.path.join(outpath, f"images/{scene_key}"), exist_ok=True)
+
+    object_view_data = []
+    objects_info = list(
+        filter(
+            lambda obj: cat_map[obj.category.name()] is not None, objects_info
+        )
+    )
+
+    for object in objects_info:
+        name = object.category.name().replace("/", "_")
+        if is_on_ceiling(sim, object.aabb):
+            continue
+
+        check, view = get_best_viewpoint_with_posesampler(
+            sim, pose_sampler, [object]
+        )
+        if check:
+            cov, pose, _ = view
+            if cov < 0.05:
+                continue
+            agent.set_state(pose)
+            obs = sim.get_sensor_observations()
+            object_ids_in_view = get_all_objects_in_view(
+                obs, object.semantic_id
             )
-            print(f"Starting scene: {scene_key}")
-            get_objects(sim, objects_info, scene_key, object_map, pose_sampler)
-            sim.close()
-
-        sorted_object_mapping = {}
-        print(f"Total number of objects visualized is {len(object_map.keys())}")
-        for obj in object_map.keys():
-            sorted_object_mapping[obj] = []
-            for scene, (cov, fraction) in object_map[obj].items():
-                sorted_object_mapping[obj].append((cov, fraction, scene))
-            sorted_object_mapping[obj] = sorted(
-                sorted_object_mapping[obj], reverse=True
+            objects_in_view = list(
+                filter(
+                    lambda obj: obj is not None
+                    and (
+                        cat_map[obj.category.name()] is not None
+                        or "wall" in obj.category.name().lower()
+                    ),
+                    [*map(objects_dict.get, object_ids_in_view)],
+                )
             )
-        with open(f"data/object_images_{split}.pickle", "wb") as handle:
-            pickle.dump(sorted_object_mapping, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    with open(f"data/object_images_{split}.pickle", "rb") as input_file:
-        sorted_object_mapping = pickle.load(input_file)
-
-    for threshold in [0.025, 0.05, 0.1, 0.15, 0.20]:
-        for vis in [True, False]:
-            if vis:
-                create_html(
-                    f"data/webpage/objects_visualized_{split}_{threshold}.html",
-                    sorted_object_mapping,
-                    visualised=vis,
-                    threshold=threshold,
+            colors = get_color(obs, [object] + objects_in_view)
+            depths = get_depth(obs, [object] + objects_in_view)
+            drawn_img, bbs, area_covered = get_bounding_box(
+                obs, [object] + objects_in_view, depths = depths
+            )
+            if np.sum(area_covered) > 0:
+                # Save information of this object and all objects on top
+                path = os.path.join(
+                    outpath,
+                    f"images/{scene_key}/{name}_{object.semantic_id}.png",
                 )
-            else:
-                create_html(
-                    f"data/webpage/objects_filtered_{split}_{threshold}.html",
-                    sorted_object_mapping,
-                    visualised=vis,
-                    threshold=threshold,
-                )
+                save_img(drawn_img, path)
+                view_info = {
+                    "target_obj_id": object.semantic_id,
+                    "target_obj_name": object.category.name(),
+                    "target_obj_2d_bb": bbs[0],
+                    "target_obj_3d_bb": {
+                        "center": object.aabb.center,
+                        "sizes_x_y_z": object.aabb.sizes,
+                    },
+                    "target_obj_depth": depths[0],
+                    "target_obj_color": colors[0],
+                    "ref_objects": {
+                        f"{obj.category.name()}_{obj.semantic_id}": {
+                            "2d_bb": bbs[i + 1],
+                            "3d_bb": {
+                                "center": obj.aabb.center,
+                                "sizes_x_y_z": obj.aabb.sizes,
+                            },
+                        }
+                        for i, obj in enumerate(objects_in_view)
+                    },
+                    "scene": scene_key,
+                    "img_ref": path,
+                }
+                object_view_data.append(view_info)
+                objects_visualized.append(object.category.name().strip())
+                cnt += 1
+
+    meta_save_path = os.path.join(outpath, f"meta/{scene_key}.pkl")
+    with open(meta_save_path, "wb") as handle:
+        pickle.dump(object_view_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def get_objects_for_split(
+    split: str,
+    outpath: str,
+    num_scenes: Union[int, None],
+    tasks_per_gpu: int = 1,
+    multiprocessing_enabled: bool = False,
+):
+    """Makes episodes for all scenes in a split"""
+    
+    scenes = sorted(
+        list(
+            get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[
+                split
+            ]
+        )
+    )
+    num_scenes = len(scenes) if num_scenes is None else num_scenes
+    scenes = scenes[:num_scenes]
+
+    scenes =['vLpv2VX547B']
+    print(scenes)
+    print(
+        "Starting visualisation for split {} with {} scenes".format(
+            split, len(scenes)
+        )
+    )
+
+    os.makedirs(os.path.join(outpath.format(split), "meta"), exist_ok=True)
+
+    if multiprocessing_enabled:
+        gpus = len(GPUtil.getAvailable(limit=256))
+        cpu_threads = gpus * 16
+        deviceIds = GPUtil.getAvailable(
+            order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
+        )
+        print(
+            "In multiprocessing setup - cpu {}, GPU: {}".format(
+                cpu_threads, gpus
+            )
+        )
+
+        items = []
+        for i, s in enumerate(scenes):
+            deviceId = deviceIds[0]
+            if i < gpus * tasks_per_gpu or len(deviceIds) == 0:
+                deviceId = i % gpus
+            items.append((s, outpath.format(split), deviceId))
+
+        mp_ctx = multiprocessing.get_context("forkserver")
+        with mp_ctx.Pool(cpu_threads) as pool, tqdm(
+            total=len(scenes), position=0
+        ) as pbar:
+            for _ in pool.imap_unordered(get_objects_for_scene, items):
+                pbar.update()
+    else:
+        for scene in tqdm(scenes, total=len(scenes), dynamic_ncols=True):
+            get_objects_for_scene((scene, outpath.format(split), 0))
 
 
 if __name__ == "__main__":
@@ -326,15 +425,35 @@ if __name__ == "__main__":
         type=str,
         required=True,
     )
+
     parser.add_argument(
-        "-f",
-        "--filtered_data",
-        help="path of json which contains the filtered categories",
+        "-o",
+        "--outpath",
+        help="output path",
         type=str,
-        required=True,
+        default="data/object_views/{}/",
+    )
+    parser.add_argument(
+        "-n",
+        "--num_scenes",
+        help="number of scenes",
+        type=int,
+    )
+    parser.add_argument(
+        "--tasks_per_gpu", help="number of scenes", type=int, default=1
+    )
+    parser.add_argument(
+        "-m",
+        "--multiprocessing_enabled",
+        dest="multiprocessing_enabled",
+        action="store_true",
     )
     args = parser.parse_args()
     split = args.split
-    f = open(args.filtered_data)
-    FILTERED_CATEGORIES = json.load(f)
-    main()
+    num_scenes = args.num_scenes
+    outpath = args.outpath
+    tasks_per_gpu = args.tasks_per_gpu
+    multiprocessing_enabled = args.multiprocessing_enabled
+    get_objects_for_split(
+        split, outpath, num_scenes, tasks_per_gpu, multiprocessing_enabled
+    )

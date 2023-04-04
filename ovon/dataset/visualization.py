@@ -23,6 +23,57 @@ POINT_COLOR = [150, 150, 150]  # Grey
 VIEW_POINT_COLOR = [0, 200, 0]  # Green
 CENTER_POINT_COLOR = [200, 0, 0]  # Red
 
+color2RGB = {
+    "Black": (0, 0, 0),
+    "White": (255, 255, 255),
+    "Red": (255, 0, 0),
+    "Lime": (0, 255, 0),
+    "Blue": (0, 0, 255),
+    "Yellow": (255, 255, 0),
+    "Cyan": (0, 255, 255),
+    "Magenta": (255, 0, 255),
+    "Silver": (192, 192, 192),
+    "Gray": (128, 128, 128),
+    "Maroon": (128, 0, 0),
+    "Olive": (128, 128, 0),
+    "Green": (0, 128, 0),
+    "Purple": (128, 0, 128),
+    "Teal": (0, 128, 128),
+    "Navy": (0, 0, 128),
+}
+
+def get_depth(obs, objects):
+    obj_depths = []
+    for obj in objects:
+        id = obj.semantic_id
+        depth = np.mean(obs["depth"][obs["semantic"] == id])
+        obj_depths.append("{:.2f}".format(depth))
+        
+    return obj_depths
+
+def get_color(obs, objects):
+    """
+    Returns color name or None if object does not have specific color
+    """
+    rgb_key = "color" if "color" in obs.keys() else "rgb"
+    colors = np.array(list(color2RGB.values()))
+    obj_colors = []
+    for obj in objects:
+        id = obj.semantic_id
+        rgb = obs[rgb_key][obs["semantic"] == id][:, :3]
+        color_ids = np.argmin(
+            np.linalg.norm(rgb[:, np.newaxis, :] - colors, axis=2),
+            axis=1,
+        )
+        maj_color = np.bincount(color_ids).argmax()
+        if (color_ids[color_ids == maj_color]).shape[0] / color_ids.shape[
+            0
+        ] > 0.5:
+            obj_colors.append(list(color2RGB.keys())[maj_color])
+        else:
+            obj_colors.append(None)
+    return obj_colors
+
 
 def obs_to_frame(obs):
     rgb = cv2.cvtColor(obs["color_sensor"], cv2.COLOR_BGRA2RGB)
@@ -64,6 +115,7 @@ def save_candidate_imgs(
 def get_bounding_box(
     obs: List[Dict[str, ndarray]],
     objectList: List[SemanticObject],
+    depths = None
 ):
     """Return the image with bounding boxes drawn on objects inside objectList"""
     N, H, W = (
@@ -84,9 +136,19 @@ def get_bounding_box(
             ((box[2] - box[0]) * (box[3] - box[1])).cpu().detach().numpy()
             / (H * W)
         )
-    img = Image.fromarray(obs["color"][:, :, :3], "RGB")
+    rgb_key = "color" if "color" in obs.keys() else "rgb"
+    img = Image.fromarray(obs[rgb_key][:, :, :3], "RGB")
+    if depths is None:
+        labels = [f"{obj.category.name()}_{obj.semantic_id}" for i,obj in enumerate(objectList)]
+    else:
+        labels = [f"{obj.category.name()}_{obj.semantic_id}_d = {depths[i]}" for i,obj in enumerate(objectList)]
     drawn_img = draw_bounding_boxes(
-        PILToTensor()(img), boxes, colors="red", width=3
+        PILToTensor()(img),
+        boxes,
+        colors="red",
+        width=2,
+        labels=labels,
+        font_size=10,
     )
     boxes = boxes.cpu().detach().numpy()
     return drawn_img, boxes, area

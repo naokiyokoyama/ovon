@@ -563,7 +563,7 @@ def find_relationships_for_scene(args):
         agent_radius=0.17,
         sensor_height=1.31,
         pose_sampler_args={
-            "r_min": 1.0,
+            "r_min": 1.5,
             "r_max": 2.0,
             "r_step": 0.5,
             "rot_deg_delta": 10.0,
@@ -606,7 +606,7 @@ def find_relationships_for_split(
 ):
     # HM3D_SCENES = get_hm3d_semantic_scenes("data/scene_datasets/hm3d")
     # scenes = list(HM3D_SCENES[split])
-    scenes = ["XiJhRLvpKpX"]
+    scenes = ["XiJhRLvpKpX", "1S7LAXRdDqK"]
 
     print("Total number of scenes: ", len(scenes[:num_scenes]))
     if num_scenes is None:
