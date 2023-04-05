@@ -2,21 +2,23 @@ from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
 import clip
+import numpy as np
 import torch
 from gym import spaces
+from gym.spaces import Dict as SpaceDict
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
+from habitat_baselines.rl.ddppo.policy.resnet import resnet18
+from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
 from habitat_baselines.rl.models.rnn_state_encoder import (
     build_rnn_state_encoder,
 )
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
-from torch.nn import functional as F
 from torchvision import transforms as T
-from torchvision.transforms import functional as TF
 
 from ovon.task.sensors import ClipObjectGoalSensor
 
@@ -36,6 +38,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         aux_loss_config: Optional["DictConfig"] = None,
         fuse_keys: Optional[List[str]] = None,
         add_clip_linear_projection: bool = False,
+        depth_ckpt: str = "",
         **kwargs,
     ):
         if policy_config is not None:
@@ -61,6 +64,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 force_blind_policy=force_blind_policy,
                 discrete_actions=discrete_actions,
                 add_clip_linear_projection=add_clip_linear_projection,
+                depth_ckpt=depth_ckpt,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -92,6 +96,14 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 )
             )
         )
+        try:
+            """TODO: Eventually eliminate this check. Safeguard for loading
+            configs from checkpoints created before commit where depth_ckpt was
+            added to OVONPolicyConfig
+            """
+            depth_ckpt = config.habitat_baselines.rl.policy.depth_ckpt
+        except:
+            depth_ckpt = ""
         return cls(
             observation_space=filtered_obs,
             action_space=action_space,
@@ -104,6 +116,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             aux_loss_config=config.habitat_baselines.rl.auxiliary_losses,
             fuse_keys=None,
             add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
+            depth_ckpt=depth_ckpt,
         )
 
 
@@ -120,6 +133,7 @@ class PointNavResNetCLIPNet(Net):
         force_blind_policy: bool = False,
         discrete_actions: bool = True,
         clip_model: str = "RN50",
+        depth_ckpt: str = "",
         add_clip_linear_projection: bool = False,
     ):
         super().__init__()
@@ -143,6 +157,7 @@ class PointNavResNetCLIPNet(Net):
             observation_space,
             pooling="avgpool" if "avgpool" in backbone else "attnpool",
             clip_model=clip_model,
+            depth_ckpt=depth_ckpt,
         )
         if not self.visual_encoder.is_blind:
             self.visual_fc = nn.Sequential(
@@ -321,6 +336,7 @@ class ResNetCLIPEncoder(nn.Module):
         observation_space: spaces.Dict,
         pooling="attnpool",
         clip_model="RN50",
+        depth_ckpt: str = "",
     ):
         super().__init__()
 
@@ -346,19 +362,26 @@ class ResNetCLIPEncoder(nn.Module):
 
             self.backbone = model.visual
 
-            if self.rgb and self.depth:
-                self.backbone.attnpool = nn.Identity()
-                self.output_shape = (2048,)
-            elif pooling == "none":
+            assert self.rgb
+
+            if self.depth:
+                assert depth_ckpt != ""
+                self.depth_backbone = copy_depth_encoder(depth_ckpt)
+                depth_size = 512
+            else:
+                self.depth_backbone = None
+                depth_size = 0
+
+            if pooling == "none":
                 self.backbone.attnpool = nn.Identity()
                 self.output_shape = (2048, 7, 7)
             elif pooling == "avgpool":
                 self.backbone.attnpool = nn.Sequential(
                     nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten()
                 )
-                self.output_shape = (2048,)
+                self.output_shape = (2048 + depth_size,)
             else:
-                self.output_shape = (1024,)
+                self.output_shape = (1024 + depth_size,)
 
             for param in self.backbone.parameters():
                 param.requires_grad = False
@@ -366,6 +389,11 @@ class ResNetCLIPEncoder(nn.Module):
                 if "BatchNorm" in type(module).__name__:
                     module.momentum = 0.0
             self.backbone.eval()
+
+            if self.depth:
+                for param in self.depth_backbone.parameters():
+                    param.requires_grad = False
+                self.depth_backbone.eval()
 
     @property
     def is_blind(self):
@@ -388,27 +416,79 @@ class ResNetCLIPEncoder(nn.Module):
             cnn_input.append(rgb_x)
 
         if self.depth:
-            depth_observations = observations["depth"][
-                ..., 0
-            ]  # [BATCH x HEIGHT X WIDTH]
-            ddd = torch.stack(
-                [depth_observations] * 3, dim=1
-            )  # [BATCH x 3 x HEIGHT X WIDTH]
-            ddd = torch.stack(
-                [
-                    self.preprocess(
-                        TF.convert_image_dtype(depth_map, torch.uint8)
-                    )
-                    for depth_map in ddd
-                ]
-            )  # [BATCH x CHANNEL x HEIGHT X WIDTH] in torch.float32
-            depth_x = self.backbone(ddd).float()
-            cnn_input.append(depth_x)
+            depth_feats = self.depth_backbone({"depth": observations["depth"]})
+            cnn_input.append(depth_feats)
 
-        if self.rgb and self.depth:
-            x = F.adaptive_avg_pool2d(cnn_input[0] + cnn_input[1], 1)
-            x = x.flatten(1)
-        else:
-            x = torch.cat(cnn_input, dim=1)
+        x = torch.cat(cnn_input, dim=1)
 
         return x
+
+
+class ResNet18DepthEncoder(nn.Module):
+    def __init__(self, depth_encoder, visual_fc):
+        super().__init__()
+        self.encoder = depth_encoder
+        self.visual_fc = visual_fc
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.visual_fc(x)
+        return x
+
+
+def copy_depth_encoder(depth_ckpt):
+    """
+    Returns an encoder that stacks the encoder and visual_fc of the provided
+    depth checkpoint
+    :param depth_ckpt: path to a resnet18 depth pointnav policy
+    :return: nn.Module representing the backbone of the depth policy
+    """
+    # Initialize encoder and fc layers
+    base_planes = 32
+    ngroups = 32
+    spatial_size = 128
+
+    observation_space = SpaceDict(
+        {
+            "depth": spaces.Box(
+                low=0.0, high=1.0, shape=(256, 256, 1), dtype=np.float32
+            ),
+        }
+    )
+    depth_encoder = ResNetEncoder(
+        observation_space,
+        base_planes,
+        ngroups,
+        spatial_size,
+        make_backbone=resnet18,
+    )
+
+    flat_output_shape = 2048
+    hidden_size = 512
+    visual_fc = nn.Sequential(
+        nn.Flatten(),
+        nn.Linear(flat_output_shape, hidden_size),
+        nn.ReLU(True),
+    )
+
+    pretrained_state = torch.load(depth_ckpt, map_location="cpu")
+
+    # Load weights into depth encoder
+    depth_encoder_state_dict = {
+        k[len("actor_critic.net.visual_encoder.") :]: v
+        for k, v in pretrained_state["state_dict"].items()
+        if k.startswith("actor_critic.net.visual_encoder.")
+    }
+    depth_encoder.load_state_dict(depth_encoder_state_dict)
+
+    # Load weights in fc layers
+    visual_fc_state_dict = {
+        k[len("actor_critic.net.visual_fc.") :]: v
+        for k, v in pretrained_state["state_dict"].items()
+        if k.startswith("actor_critic.net.visual_fc.")
+    }
+    visual_fc.load_state_dict(visual_fc_state_dict)
+
+    modified_depth_encoder = ResNet18DepthEncoder(depth_encoder, visual_fc)
+
+    return modified_depth_encoder
