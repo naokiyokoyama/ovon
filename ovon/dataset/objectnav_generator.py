@@ -34,7 +34,6 @@ from ovon.dataset.ovon_dataset import OVONEpisode
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import (ObjectCategoryMapping, WordnetMapping,
                                          get_hm3d_semantic_scenes)
-from ovon.dataset.visualize_episodes import save_visual, visualize_episodes
 
 
 class ObjectGoalGenerator:
@@ -430,8 +429,6 @@ class ObjectGoalGenerator:
                     start_rotations.append(source_rotation)
                     episode_count += 1
                     break
-
-        print("Len: {}".format(len(start_positions)))
         return start_positions, start_rotations
     
     def _sample_start_poses(
@@ -439,7 +436,6 @@ class ObjectGoalGenerator:
         sim: Simulator,
         goals: List,
     ) -> Tuple[List, List]:
-        # viewpoint_locs = [vp["agent_state"]["position"] for vp in viewpoints]
         viewpoint_locs = [
             [vp["agent_state"]["position"] for vp in goal["view_points"]]
             for goal in goals
@@ -531,7 +527,7 @@ class ObjectGoalGenerator:
 
             else:
                 # no start pose found after n attempts
-                return [], [], [], [], [], [], []
+                return [], []
 
         return start_positions, start_rotations
 
@@ -842,7 +838,7 @@ class ObjectGoalGenerator:
             children_object_categories=children_object_categories,
         )
 
-    def make_episodes(self, object_goals: Dict, scene: str, episodes_per_object: int = -1):
+    def make_episodes(self, object_goals: Dict, scene: str, episodes_per_object: int = -1, split: str = "train"):
         dataset = habitat.datasets.make_dataset("ObjectNav-v1")
         dataset.category_to_task_category_id = {}
         dataset.category_to_scene_annotation_category_id = {}
@@ -901,8 +897,8 @@ class ObjectGoalGenerator:
                 episodes_for_object.append(episode)
                 episode_count += 1
             
-            # if episodes_per_object > 0:
-            #     episodes_for_object = random.sample(episodes_for_object, min(episodes_per_object, len(episodes_for_object)))
+            if split != "train" and episodes_per_object > 0:
+                episodes_for_object = random.sample(episodes_for_object, min(episodes_per_object, len(episodes_for_object)))
 
             dataset.episodes.extend(episodes_for_object)
 
@@ -963,7 +959,7 @@ def make_episodes_for_scene(args):
         scene=scene, with_viewpoints=True, with_start_poses=True
     )
     print("Scene: {}".format(scene))
-    episode_dataset = objectgoal_maker.make_episodes(object_goals, scene, episodes_per_object==episodes_per_object)
+    episode_dataset = objectgoal_maker.make_episodes(object_goals, scene, episodes_per_object=episodes_per_object, split=split)
 
     scene_name = os.path.basename(scene).split(".")[0]
     save_to = os.path.join(outpath, f"{scene_name}.json.gz")
@@ -979,7 +975,7 @@ def make_episodes_for_split(
     tasks_per_gpu: int = 1,
     enable_multiprocessing: bool = False,
     start_poses_per_object: int = 2000,
-    episodes_per_object: int = 50000,
+    episodes_per_object: int = -1,
 ):
     scenes = list(
         get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
@@ -1064,7 +1060,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--episodes-per-object",
         type=int,
-        default=-1,
+        default=0,
     )
 
     args = parser.parse_args()

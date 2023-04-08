@@ -19,14 +19,18 @@ export MAGNUM_LOG=quiet
 MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
 export MAIN_ADDR
 
-SPLIT=$1
-NUM_TASKS=$2
+source /srv/flash1/rramrakhya6/miniconda3/etc/profile.d/conda.sh
+conda deactivate
+conda activate ovon
+
+SPLIT="val"
+NUM_TASKS=$1
 NUM_SCENES=-1
 
 srun python ovon/dataset/objectnav_generator.py \
   --split $SPLIT \
   --num-scenes $NUM_SCENES \
   --tasks-per-gpu $NUM_TASKS \
-  --episodes-per-object 200 \
-  --episodes-per-scene 50 \
+  --start-poses-per-object 200 \
+  --episodes-per-object 50 \
   --multiprocessing
