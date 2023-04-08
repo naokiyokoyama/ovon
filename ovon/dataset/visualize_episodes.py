@@ -158,7 +158,7 @@ def visualize_episodes(
                 sim,
                 top_down_map,
                 episode["start_position"],
-                maps.MAP_SOURCE_POINT_INDICATOR[maps.MAP_SHORTEST_PATH_COLOR],
+                maps.MAP_SOURCE_POINT_INDICATOR,
             )
 
         if top_down_map is None:
