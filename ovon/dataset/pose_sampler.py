@@ -5,7 +5,8 @@ import numpy as np
 from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
 from habitat_sim.agent.agent import AgentState, SixDOFPose
 from habitat_sim.simulator import Simulator
-from habitat_sim.utils.common import quat_from_angle_axis, quat_from_two_vectors
+from habitat_sim.utils.common import (quat_from_angle_axis,
+                                      quat_from_two_vectors)
 from numpy import ndarray
 
 EPS_ARRAY = np.array([1e-5, 0.0, 1e-5])
@@ -88,6 +89,7 @@ class PoseSampler:
     def sample_agent_poses_radially(
         self,
         search_center: np.ndarray = None,
+        obj: SemanticObject = None,
     ) -> List[AgentState]:
         """Generates AgentState.position and AgentState.rotation for all
         navigable agent poses given a radial sampling method about the
@@ -96,13 +98,14 @@ class PoseSampler:
 
         floor_height = self._get_floor_height(search_center)
         search_center = np.array([search_center[0], floor_height, search_center[2]])
+        x_len, _, z_len = obj.aabb.sizes / 2.0
 
         poses: List[AgentState] = []
 
         for i in range(
             1 + int(np.floor((self.radius_max - self.radius_min) / self.radius_step))
         ):
-            r = self.radius_min + i * self.radius_step
+            r = self.radius_min + i * self.radius_step #+ max(x_len, z_len)
             for j in range(1 + int(np.floor(360 / self.rot_deg_delta))):
                 theta = np.deg2rad(j * self.rot_deg_delta)
                 x_diff = r * np.cos(theta)
@@ -136,7 +139,7 @@ class PoseSampler:
                         np.deg2rad(deg), habitat_sim.geo.GRAVITY
                     )
 
-                poses.append((AgentState(position=pos, rotation=rot), r))
+                poses.append((AgentState(position=pos, rotation=rot), r - max(x_len, z_len)))
 
         return poses
 

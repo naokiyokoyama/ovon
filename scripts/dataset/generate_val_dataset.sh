@@ -8,7 +8,7 @@
 #SBATCH --ntasks-per-node 1
 #SBATCH --constraint=a40
 #SBATCH --partition=short
-#SBATCH --exclude=conroy
+#SBATCH --exclude=conroy,ig-88
 #SBATCH --signal=USR1@100
 #SBATCH --requeue
 

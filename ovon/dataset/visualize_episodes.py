@@ -6,17 +6,12 @@ import habitat
 import habitat_sim
 from habitat.config import read_write
 from habitat.config.default import get_config
-from habitat.config.default_structured_configs import (
-    HabitatSimSemanticSensorConfig,
-)
+from habitat.config.default_structured_configs import \
+    HabitatSimSemanticSensorConfig
 from habitat.utils.visualizations import maps
 
-from ovon.utils.utils import (
-    draw_bounding_box,
-    draw_point,
-    is_on_same_floor,
-    load_dataset,
-)
+from ovon.utils.utils import (draw_bounding_box, draw_point, is_on_same_floor,
+                              load_dataset)
 
 SCENES_ROOT = "data/scene_datasets/hm3d"
 MAP_RESOLUTION = 512
@@ -59,6 +54,8 @@ def get_sim(objnav_config):
     navmesh_settings.agent_height = (
         objnav_config.habitat.simulator.agents.main_agent.height
     )
+    navmesh_settings.agent_radius = 0.18
+    navmesh_settings.agent_height = 0.88
     sim.recompute_navmesh(
         sim.pathfinder, navmesh_settings, include_static_objects=True
     )
@@ -72,11 +69,13 @@ def setup(scene):
     return sim
 
 
-def visualize_episodes(sim, dataset, object_category, goal_category_id):
+def visualize_episodes(
+    sim,
+    episodes,
+    goals,
+    object_category
+):
     top_down_maps = []
-    episodes = dataset["episodes"]
-    goals = dataset["goals_by_category"][goal_category_id]
-    ref_floor_height = episodes[0]["start_position"][1]
 
     grouped_goal_heights = []
     grouped_goals = []
@@ -85,7 +84,7 @@ def visualize_episodes(sim, dataset, object_category, goal_category_id):
         goal = goals[i]
         group_exists = False
         for idx, heights in enumerate(grouped_goal_heights):
-            if is_on_same_floor(goal["position"][1], heights[0]):
+            if abs(goal["position"][1] - heights[0]) <= 0.25:
                 group_exists = True
                 grouped_goal_heights[idx].append(goal["position"][1])
                 grouped_goals[idx].append(goal)
@@ -104,14 +103,13 @@ def visualize_episodes(sim, dataset, object_category, goal_category_id):
     for grouped_goal in grouped_goals:
         ref_floor_height = grouped_goal[0]["position"][1]
         top_down_map = None
+        goal_height = grouped_goal[0]["view_points"][0]["agent_state"]["position"][1]
 
         for goal in grouped_goal:
             if top_down_map is None:
                 top_down_map = maps.get_topdown_map(
                     sim.pathfinder,
-                    height=goal["view_points"][0]["agent_state"]["position"][
-                        1
-                    ],
+                    height=goal_height,
                     map_resolution=MAP_RESOLUTION,
                     draw_border=True,
                 )
@@ -134,14 +132,18 @@ def visualize_episodes(sim, dataset, object_category, goal_category_id):
             draw_bounding_box(
                 sim, top_down_map, goal["object_id"], ref_floor_height
             )
-
+        
         for episode in episodes:
             if episode["object_category"] != object_category:
                 continue
 
-            if not is_on_same_floor(
-                episode["start_position"][1], ref_floor_height
-            ):
+            on_same_floor = False
+            for goal in grouped_goal:
+                if abs(episode["start_position"][1] - goal_height) <= 0.25:
+                    on_same_floor = True
+                    break
+
+            if not on_same_floor:
                 continue
 
             if top_down_map is None:
@@ -156,7 +158,7 @@ def visualize_episodes(sim, dataset, object_category, goal_category_id):
                 sim,
                 top_down_map,
                 episode["start_position"],
-                maps.MAP_SOURCE_POINT_INDICATOR,
+                maps.MAP_SOURCE_POINT_INDICATOR[maps.MAP_SHORTEST_PATH_COLOR],
             )
 
         if top_down_map is None:
@@ -171,7 +173,7 @@ def visualize_episodes(sim, dataset, object_category, goal_category_id):
         )
     )
 
-    return top_down_maps[0]
+    return top_down_maps
 
 
 def save_visual(img, path):
@@ -181,20 +183,23 @@ def save_visual(img, path):
 def visualize(episodes_path, output_path):
     dataset = load_dataset(episodes_path)
 
+    os.makedirs(output_path, exist_ok=True)
+
     sim = setup(dataset["episodes"][0]["scene_id"])
     categories = dataset["goals_by_category"].keys()
     for category in categories:
-        top_down_map = visualize_episodes(
+        top_down_maps = visualize_episodes(
             sim,
-            dataset,
+            dataset["episodes"],
+            dataset["goals_by_category"][category],
             object_category=category.split("_")[1],
-            goal_category_id=category,
         )
-        object_output_path = os.path.join(
-            output_path, "{}.png".format(category)
-        )
-        print(object_output_path, category)
-        save_visual(top_down_map, object_output_path)
+        for i, top_down_map in enumerate(top_down_maps):
+            object_output_path = os.path.join(
+                output_path, "{}_{}.png".format(category, i)
+            )
+            print(object_output_path, category)
+            save_visual(top_down_map, object_output_path)
 
 
 if __name__ == "__main__":
