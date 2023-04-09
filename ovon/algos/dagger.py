@@ -133,7 +133,9 @@ class DAgger(PPO):
 
         for epoch in range(self.ppo_epoch):
             profiling_wrapper.range_push("DAgger.update epoch")
-            data_generator = rollouts.recurrent_generator(None, self.num_mini_batch)
+            data_generator = rollouts.recurrent_generator(
+                None, self.num_mini_batch
+            )
 
             for _bid, batch in enumerate(data_generator):
                 self._set_grads_to_none()
@@ -183,7 +185,9 @@ class DAgger(PPO):
 
                 with inference_mode():
                     if "is_coeffs" in batch:
-                        record_min_mean_max(batch["is_coeffs"], "ver_is_coeffs")
+                        record_min_mean_max(
+                            batch["is_coeffs"], "ver_is_coeffs"
+                        )
                     learner_metrics["loss"].append(loss)
                     learner_metrics["grad_norm"].append(grad_norm)
 
@@ -194,7 +198,9 @@ class DAgger(PPO):
                         )
 
                     if isinstance(rollouts, VERRolloutStorage):
-                        assert isinstance(batch["policy_version"], torch.Tensor)
+                        assert isinstance(
+                            batch["policy_version"], torch.Tensor
+                        )
                         record_min_mean_max(
                             (
                                 rollouts.current_policy_version
@@ -248,7 +254,12 @@ class DAggerPolicyMixin:
         return self.net, self.action_distribution
 
     def act(
-        self, observations, rnn_hidden_states, prev_actions, masks, deterministic=False
+        self,
+        observations,
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        deterministic=False,
     ):
         """Skips computing values and action_log_probs, which are RL-only."""
         features, rnn_hidden_states, _ = self.net(
@@ -288,7 +299,11 @@ class DAggerPolicyMixin:
         state and then returns the log probability of the given action under this
         distribution."""
         features, _, _ = self.net(
-            observations, rnn_hidden_states, prev_actions, masks, rnn_build_seq_info
+            observations,
+            rnn_hidden_states,
+            prev_actions,
+            masks,
+            rnn_build_seq_info,
         )
         distribution = self.action_distribution(features)
         log_probs = distribution.log_probs(action)
