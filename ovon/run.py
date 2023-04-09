@@ -20,8 +20,8 @@ def register_plugins():
 
 
 def main():
-    """Builds upon the habitat_baselines.run.main() function to add more flags for
-    convenience."""
+    """Builds upon the habitat_baselines.run.main() function to add more flags
+    for convenience."""
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -55,7 +55,8 @@ def main():
         "--debug-datapath",
         "-p",
         action="store_true",
-        help="Uses faster-to-load $OVON_DEBUG_DATAPATH episode dataset for debugging.",
+        help="Uses faster-to-load $OVON_DEBUG_DATAPATH episode dataset for "
+        "debugging.",
     )
     parser.add_argument(
         "--blind",
@@ -67,8 +68,9 @@ def main():
         "--checkpoint-config",
         "-c",
         action="store_true",
-        help="If set, checkpoint's config will be used, but overrides WILL be applied. "
-        "Does nothing when training; meant for using ckpt config + overrides for eval.",
+        help="If set, checkpoint's config will be used, but overrides WILL be "
+        "applied. Does nothing when training; meant for using ckpt config + "
+        "overrides for eval.",
     )
     parser.add_argument(
         "opts",
@@ -100,8 +102,8 @@ def merge_config(config, opts):
     3. Save this config to a temporary file
     4. Use the path to the temporary file and the given override opts
 
-    This is the only way to add overrides in eval that also use whatever overrides were
-    used in training.
+    This is the only way to add overrides in eval that also use whatever
+    overrides were used in training.
     """
     # 1. Locate a checkpoint using the config
     checkpoint_path = config.habitat_baselines.eval_ckpt_path_dir
@@ -123,13 +125,13 @@ def merge_config(config, opts):
     tmp_config_path = f"/tmp/ovon_config_{randstr}.yaml"
     OmegaConf.save(ckpt_config, tmp_config_path)
 
-    # 4. Use the path to the temporary file as the config path and use the given opts to
-    # override the config
+    # 4. Use the path to the temporary file as the config path and use the
+    # given opts to override the config
     config = get_config(tmp_config_path, opts)
     os.remove(tmp_config_path)
 
-    # Set load_resume_state_config to False so we don't load the checkpoint's config
-    # again and lose the overrides
+    # Set load_resume_state_config to False so we don't load the checkpoint's
+    # config again and lose the overrides
     with read_write(config):
         config.habitat_baselines.load_resume_state_config = False
 
@@ -143,7 +145,7 @@ def edit_config(config, args):
             f"(Current value: {os.environ['JUNK']})"
         )
 
-        # Remove resume state in junk folder if training, so we don't resume from it
+        # Remove resume state in junk if training, so we don't resume from it
         resume_state_path = osp.join(
             os.environ["JUNK"], ".habitat-resume-state.pth"
         )
@@ -169,7 +171,7 @@ def edit_config(config, args):
     if args.single_env:
         config.habitat_baselines.num_environments = 1
 
-    # Remove the frontier_exploration_map visualization from measurements if training
+    # Remove frontier_exploration_map visualization if training
     if (
         args.run_type == "train"
         and "frontier_exploration_map" in config.habitat.task.measurements
@@ -185,7 +187,7 @@ def edit_config(config, args):
             HabitatSimDepthSensorConfig,
         )
 
-        # A camera is required to properly load in a scene; use dummy 1x1 depth camera
+        # Camera required to load in a scene; use dummy 1x1 depth camera
         config.habitat.simulator.agents.main_agent.sim_sensors.update(
             {"depth_sensor": HabitatSimDepthSensorConfig(height=1, width=1)}
         )
