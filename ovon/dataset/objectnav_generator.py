@@ -921,6 +921,12 @@ def make_episodes_for_scene(args):
     ) = args
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
+    
+    scene_name = os.path.basename(scene).split(".")[0]
+    print("Processing scene: {}, output_path: {}".format(scene, os.path.join(outpath, "{}.json.gz".format(scene_name))))
+    if os.path.exists(os.path.join(outpath, "{}.json.gz".format(scene_name))):
+        print("Skipping scene: {}".format(scene))
+        return
 
     objectgoal_maker = ObjectGoalGenerator(
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
@@ -952,7 +958,7 @@ def make_episodes_for_scene(args):
         max_viewpoint_radius=1.0,
         wordnet_mapping_file="data/wordnet/wordnet_mapping.json",
         device_id=device_id,
-        sample_dense_viewpoints=True,
+        sample_dense_viewpoints=False,
     )
 
     object_goals = objectgoal_maker.make_object_goals(

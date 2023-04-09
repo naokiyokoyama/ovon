@@ -8,7 +8,7 @@
 #SBATCH --ntasks-per-node 4
 #SBATCH --constraint=a40
 #SBATCH --partition=short
-#SBATCH --exclude=qt-1
+#SBATCH --exclude=cheetah,samantha,xaea-12,kitt
 #SBATCH --signal=USR1@100
 #SBATCH --requeue
 
@@ -25,14 +25,14 @@ conda activate ovon
 
 export PYTHONPATH=/srv/flash1/rramrakhya6/spring_2023/habitat-sim/src_python/
 
-TENSORBOARD_DIR="tb/ovon/ver/resnetclip_rgb_text/seed_1_locobot"
-CHECKPOINT_DIR="data/new_checkpoints/ovon/ver/resnetclip_rgb_text/seed_1_locobot"
+TENSORBOARD_DIR="tb/ovon/ver/resnetclip_rgb_text/seed_1/"
+CHECKPOINT_DIR="data/new_checkpoints/ovon/ver/resnetclip_rgb_text/seed_1/"
 DATA_PATH="data/datasets/ovon/hm3d/v1"
 
 srun python -um ovon.run \
   --run-type train \
   --exp-config config/experiments/ddppo_objectnav_hm3d.yaml \
-  habitat_baselines.trainer_name="ver" \
+  habitat_baselines.trainer_name="ddppo" \
   habitat_baselines.rl.policy.name=PointNavResNetCLIPPolicy \
   habitat_baselines.rl.ddppo.train_encoder=False \
   habitat_baselines.rl.ddppo.backbone=resnet50_clip_avgpool \
@@ -42,5 +42,6 @@ srun python -um ovon.run \
   +habitat/task/lab_sensors@habitat.task.lab_sensors.clip_objectgoal_sensor=clip_objectgoal_sensor \
   ~habitat.task.lab_sensors.objectgoal_sensor \
   habitat.task.lab_sensors.clip_objectgoal_sensor.cache=data/clip_embeddings/ovon_cache.pkl \
+  habitat_baselines.rl.policy.add_clip_linear_projection=True \
   habitat.task.measurements.success.success_distance=0.25 \
   habitat.dataset.type="OVON-v1"

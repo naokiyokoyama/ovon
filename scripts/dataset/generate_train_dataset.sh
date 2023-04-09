@@ -25,10 +25,12 @@ conda activate ovon
 
 SPLIT=$1
 NUM_TASKS=$2
+OUTPUT_PATH=$3
 NUM_SCENES=-1
 
 srun python ovon/dataset/objectnav_generator.py \
   --split $SPLIT \
   --num-scenes $NUM_SCENES \
   --tasks-per-gpu $NUM_TASKS \
+  --output-path $OUTPUT_PATH \
   --multiprocessing
