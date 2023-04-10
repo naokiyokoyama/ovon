@@ -1,9 +1,9 @@
 from ovon import config
 from ovon.dataset import ovon_dataset
-from ovon.measurements import collision_penalty, sum_reward
+from ovon.measurements import collision_penalty, nav, sum_reward
 from ovon.models import clip_policy, ovrl_policy
 from ovon.obs_transformers import relabel_teacher_actions
-from ovon.task import sensors
+from ovon.task import sensors, simulator
 from ovon.trainers import dagger_trainer, ppo_trainer_no_2d
 
 try:

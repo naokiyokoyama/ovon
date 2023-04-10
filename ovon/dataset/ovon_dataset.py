@@ -18,6 +18,16 @@ if TYPE_CHECKING:
     from omegaconf import DictConfig
 
 
+@attr.s(auto_attribs=True)
+class OVONObjectViewLocation(ObjectViewLocation):
+    r"""OVONObjectViewLocation
+
+    Args:
+        raidus: radius of the circle
+    """
+    radius: Optional[float] = None
+
+
 @attr.s(auto_attribs=True, kw_only=True)
 class OVONEpisode(ObjectGoalNavEpisode):
     r"""OVON Episode
@@ -38,7 +48,7 @@ class OVONDatasetV1(PointNavDatasetV1):
     Class inherited from PointNavDataset that loads Open-Vocab
     Object Navigation dataset.
     """
-    episodes: List[ObjectGoalNavEpisode] = []  # type: ignore
+    episodes: List[OVONEpisode] = []  # type: ignore
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
     goals_by_category: Dict[str, Sequence[ObjectGoal]]
 
@@ -52,7 +62,7 @@ class OVONDatasetV1(PointNavDatasetV1):
             dataset["episodes"][i]["object_category"] = ep["goals"][0][
                 "object_category"
             ]
-            ep = ObjectGoalNavEpisode(**ep)
+            ep = OVONEpisode(**ep)
 
             goals_key = ep.goals_key
             if goals_key not in goals_by_category:
@@ -88,7 +98,7 @@ class OVONDatasetV1(PointNavDatasetV1):
         g = ObjectGoal(**serialized_goal)
 
         for vidx, view in enumerate(g.view_points):
-            view_location = ObjectViewLocation(**view)  # type: ignore
+            view_location = OVONObjectViewLocation(**view)  # type: ignore
             view_location.agent_state = AgentState(**view_location.agent_state)  # type: ignore
             g.view_points[vidx] = view_location
 
@@ -122,21 +132,6 @@ class OVONDatasetV1(PointNavDatasetV1):
                     ]
 
                 episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
-
-            episode.goals = self.goals_by_category[episode.goals_key]
-            if episode.children_object_categories is not None:
-                wordnet_children_included = False
-                for children_category in episode.children_object_categories:
-                    scene_id = episode.scene_id.split("/")[-1]
-                    goal_key = f"{scene_id}_{children_category}"
-
-                    # Ignore if there are no valid viewpoints for goal
-                    if goal_key not in self.goals_by_category:
-                        continue
-                    episode.goals.extend(self.goals_by_category[goal_key])
-                    wordnet_children_included = True
-                if wordnet_children_included:
-                    valid_wordnet_children += 1
 
             if episode.shortest_paths is not None:
                 for path in episode.shortest_paths:

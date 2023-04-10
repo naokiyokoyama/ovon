@@ -2,10 +2,10 @@
 #SBATCH --job-name=ovon
 #SBATCH --output=slurm_logs/ovon-ver-%j.out
 #SBATCH --error=slurm_logs/ovon-ver-%j.err
-#SBATCH --gpus 4
+#SBATCH --gpus 1
 #SBATCH --nodes 1
 #SBATCH --cpus-per-task 10
-#SBATCH --ntasks-per-node 4
+#SBATCH --ntasks-per-node 1
 #SBATCH --constraint=a40
 #SBATCH --partition=short
 #SBATCH --exclude=cheetah,samantha,xaea-12,kitt
@@ -44,4 +44,6 @@ srun python -um ovon.run \
   habitat.task.lab_sensors.clip_objectgoal_sensor.cache=data/clip_embeddings/ovon_cache.pkl \
   habitat_baselines.rl.policy.add_clip_linear_projection=True \
   habitat.task.measurements.success.success_distance=0.25 \
-  habitat.dataset.type="OVON-v1"
+  habitat.dataset.type="OVON-v1" \
+  habitat.task.measurements.distance_to_goal.type=OVONDistanceToGoal \
+  habitat.simulator.type="OVONSim-v0"
