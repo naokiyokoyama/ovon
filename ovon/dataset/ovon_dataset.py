@@ -120,7 +120,6 @@ class OVONDatasetV1(PointNavDatasetV1):
         for k, v in deserialized["goals_by_category"].items():
             self.goals_by_category[k] = [self.__deserialize_goal(g) for g in v]
 
-        valid_wordnet_children = 0
         for i, episode in enumerate(deserialized["episodes"]):
             episode = OVONEpisode(**episode)
             episode.episode_id = str(i)

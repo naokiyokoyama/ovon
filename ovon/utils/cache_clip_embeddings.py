@@ -1,10 +1,13 @@
 import argparse
+import glob
+import os
 
 import clip
 import numpy as np
 import torch
+from tqdm import tqdm
 
-from ovon.utils.utils import load_json, save_pickle, write_json
+from ovon.utils.utils import load_dataset, save_pickle
 
 PROMPT = "{category}"
 
@@ -25,10 +28,8 @@ def save_to_disk(text_embedding, goal_categories, output_path):
     save_pickle(output, output_path)
 
 
-def cache_embeddings(categories_file_path, output_path, clip_model="RN50"):
+def cache_embeddings(goal_categories, output_path, clip_model="RN50"):
     model, _ = clip.load(clip_model)
-    goal_categories = load_json(categories_file_path)
-
     batch = tokenize_and_batch(clip, goal_categories)
 
     with torch.no_grad():
@@ -37,13 +38,38 @@ def cache_embeddings(categories_file_path, output_path, clip_model="RN50"):
     save_to_disk(text_embedding, goal_categories, output_path)
 
 
+def load_categories_from_dataset(path):
+    files = glob.glob(os.path.join(path, "*json.gz"))
+
+    categories = []
+    for f in tqdm(files):
+        dataset = load_dataset(f)
+        for goal_key in dataset["goals_by_category"].keys():
+            categories.append(goal_key.split("_")[1])
+    return list(set(categories))
+
+
+def main(dataset_path, output_path):
+    goal_categories = load_categories_from_dataset(dataset_path)
+    val_goal_categories = load_categories_from_dataset(dataset_path.replace("train", "val"))
+    goal_categories.extend(val_goal_categories)
+
+    unseen_categories = set(val_goal_categories) - set(goal_categories)
+
+    print("Total goal categories: {}".format(len(goal_categories)))
+    print("Train categories: {}, Val categories: {}, Unseen Val categories: {}".format(
+        len(goal_categories), len(val_goal_categories), len(unseen_categories)
+    ))
+    cache_embeddings(goal_categories, output_path)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--categories-file-path",
+        "--dataset-path",
         type=str,
         required=True,
-        help="file path of OVON categories",
+        help="file path of OVON dataset",
     )
     parser.add_argument(
         "--output-path",
@@ -52,4 +78,4 @@ if __name__ == "__main__":
         help="output path of clip features",
     )
     args = parser.parse_args()
-    cache_embeddings(args.categories_file_path, args.output_path)
+    main(args.dataset_path, args.output_path)

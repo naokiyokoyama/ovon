@@ -95,7 +95,6 @@ class OVONDistanceToGoal(Measure):
             )
             self._metric = distance_to_target
             if np.inf == self._metric or math.inf == self._metric:
-                print(self._config)
                 goals = task._dataset.goals_by_category[episode.goals_key]
                 vps = [
                     view_point.agent_state.position

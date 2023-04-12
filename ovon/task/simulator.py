@@ -27,9 +27,7 @@ class OVONSim(HabitatSim):
         should_close_on_new_scene: bool = True,
     ):
         is_same_scene = habitat_config.scene == self._current_scene
+        super().reconfigure(habitat_config, should_close_on_new_scene)
         if not is_same_scene:
             self.recompute_navmesh(self.pathfinder, self.navmesh_settings, include_static_objects=False)
-
-        super().reconfigure(habitat_config, should_close_on_new_scene)
-
     

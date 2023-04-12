@@ -862,18 +862,10 @@ class ObjectGoalGenerator:
                 )
             )
 
-            if len(goal["start_positions"]) == 0:
-                print(
-                    "Object: {} is ignored because there are no valid start positions".format(
-                        object_goal["object_category"]
-                    )
-                )
-                continue
+            goals_by_category[goals_category_id].extend(goal["object_goals"])
 
             start_positions = goal["start_positions"]
             start_rotations = goal["start_rotations"]
-
-            goals_by_category[goals_category_id].extend(goal["object_goals"])
 
             episodes_for_object = []
             for start_position, start_rotation in zip(
@@ -958,7 +950,7 @@ def make_episodes_for_scene(args):
         max_viewpoint_radius=1.0,
         wordnet_mapping_file="data/wordnet/wordnet_mapping.json",
         device_id=device_id,
-        sample_dense_viewpoints=False,
+        sample_dense_viewpoints=True,
     )
 
     object_goals = objectgoal_maker.make_object_goals(
@@ -986,8 +978,10 @@ def make_episodes_for_split(
     scenes = list(
         get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
     )
-    scenes = sorted(scenes)[:num_scenes]
-    
+    scenes = sorted(scenes)
+
+    if num_scenes > 0:
+        scenes = scenes[:num_scenes]
     print(scenes)
 
     dataset = habitat.datasets.make_dataset("OVON-v1")
@@ -1046,7 +1040,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-scenes",
         type=int,
-        default=1,
+        default=-1,
     )
     parser.add_argument(
         "--tasks-per-gpu",

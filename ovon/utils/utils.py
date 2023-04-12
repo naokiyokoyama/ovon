@@ -51,6 +51,11 @@ def load_pickle(path):
     return data
 
 
+def write_dataset(data, path):
+    with gzip.open(path, "wt") as f:
+        json.dump(data, f)
+
+
 def is_on_same_floor(height, ref_floor_height, ceiling_height=0.5):
     return (ref_floor_height - ceiling_height) <= height < (ref_floor_height + ceiling_height)
 
