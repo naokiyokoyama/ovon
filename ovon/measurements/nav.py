@@ -1,4 +1,3 @@
-import math
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import numpy as np
@@ -46,26 +45,40 @@ class OVONDistanceToGoal(Measure):
                 ]
 
                 if episode.children_object_categories is not None:
-                    for children_category in episode.children_object_categories:
+                    for (
+                        children_category
+                    ) in episode.children_object_categories:
                         scene_id = episode.scene_id.split("/")[-1]
                         goal_key = f"{scene_id}_{children_category}"
 
                         # Ignore if there are no valid viewpoints for goal
                         if goal_key not in task._dataset.goals_by_category:
                             continue
-                        self._episode_view_points.extend([
-                            vp.agent_state.position
-                            for goal in task._dataset.goals_by_category[goal_key]
-                            for vp in goal.view_points
-                        ])
+                        self._episode_view_points.extend(
+                            [
+                                vp.agent_state.position
+                                for goal in task._dataset.goals_by_category[
+                                    goal_key
+                                ]
+                                for vp in goal.view_points
+                            ]
+                        )
 
-            self.update_metric(episode=episode, task=task, *args, **kwargs)  # type: ignore
+            self.update_metric(episode=episode, task=task, *args, **kwargs)
         except Exception as e:
-            print("[Error OVONDTG] OVONDistanceToGoal.reset_metric failed to fetch category: ", e)
+            print(
+                "[Error OVONDTG] OVONDistanceToGoal.reset_metric failed to "
+                "fetch category: ",
+                e,
+            )
             raise ValueError
 
     def update_metric(
-        self, episode: NavigationEpisode, task: NavigationTask, *args: Any, **kwargs: Any
+        self,
+        episode: NavigationEpisode,
+        task: NavigationTask,
+        *args: Any,
+        **kwargs: Any,
     ):
         current_position = self._sim.get_agent_state().position
 
@@ -85,7 +98,8 @@ class OVONDistanceToGoal(Measure):
                 )
             else:
                 logger.error(
-                    f"Non valid distance_to parameter was provided: {self._config.distance_to}"
+                    "Non valid distance_to parameter was provided"
+                    f"{self._config.distance_to}"
                 )
 
             self._previous_position = (
@@ -94,13 +108,3 @@ class OVONDistanceToGoal(Measure):
                 current_position[2],
             )
             self._metric = distance_to_target
-            if np.inf == self._metric or math.inf == self._metric:
-                goals = task._dataset.goals_by_category[episode.goals_key]
-                vps = [
-                    view_point.agent_state.position
-                    for goal in goals
-                    for view_point in goal.view_points
-                ]
-                print("DTG: {}, SCene: {}, Goal: {}, Viewpoints: {}, {}".format(self._metric, episode.scene_id, episode.object_category, len(self._episode_view_points), len(vps)))
-
-            # print("DTG: {}".format(self._metric))

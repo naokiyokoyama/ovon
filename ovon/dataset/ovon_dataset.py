@@ -9,10 +9,15 @@ from habitat.core.registry import registry
 from habitat.core.simulator import AgentState, ShortestPathPoint
 from habitat.core.utils import DatasetFloatJSONEncoder
 from habitat.datasets.pointnav.pointnav_dataset import (
-    CONTENT_SCENES_PATH_FIELD, DEFAULT_SCENE_PATH_PREFIX, PointNavDatasetV1)
-from habitat.tasks.nav.object_nav_task import (ObjectGoal,
-                                               ObjectGoalNavEpisode,
-                                               ObjectViewLocation)
+    CONTENT_SCENES_PATH_FIELD,
+    DEFAULT_SCENE_PATH_PREFIX,
+    PointNavDatasetV1,
+)
+from habitat.tasks.nav.object_nav_task import (
+    ObjectGoal,
+    ObjectGoalNavEpisode,
+    ObjectViewLocation,
+)
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
