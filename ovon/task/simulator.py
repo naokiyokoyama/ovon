@@ -9,7 +9,11 @@ class OVONSim(HabitatSim):
     def __init__(self, config: DictConfig) -> None:
         super().__init__(config)
         self.navmesh_settings = self.load_navmesh_settings()
-        self.recompute_navmesh(self.pathfinder, self.navmesh_settings, include_static_objects=False)
+        self.recompute_navmesh(
+            self.pathfinder,
+            self.navmesh_settings,
+            include_static_objects=False,
+        )
 
     def load_navmesh_settings(self):
         agent_cfg = self.habitat_config.agents.main_agent
@@ -29,5 +33,8 @@ class OVONSim(HabitatSim):
         is_same_scene = habitat_config.scene == self._current_scene
         super().reconfigure(habitat_config, should_close_on_new_scene)
         if not is_same_scene:
-            self.recompute_navmesh(self.pathfinder, self.navmesh_settings, include_static_objects=False)
-    
+            self.recompute_navmesh(
+                self.pathfinder,
+                self.navmesh_settings,
+                include_static_objects=False,
+            )
