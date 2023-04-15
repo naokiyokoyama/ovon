@@ -48,10 +48,12 @@ from habitat_baselines.utils.common import (
     inference_mode,
     is_continuous_action_space,
 )
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 
-from ovon.algos.dagger import DAgger, DAggerPolicy, DAggerPolicyConfig, DDPDAgger
-from ovon.utils.dagger_environment_worker import construct_il_environment_workers
+from ovon.algos.dagger import DAgger, DAggerPolicy, DDPDAgger
+from ovon.utils.dagger_environment_worker import (
+    construct_il_environment_workers,
+)
 
 try:
     torch.backends.cudnn.allow_tf32 = True
@@ -64,16 +66,24 @@ except AttributeError:
 @baseline_registry.register_trainer(name="ver_il")
 class VERDAggerTrainer(VERTrainer):
     def __init__(self, config: DictConfig):
-        keys = config.habitat_baselines.rl.policy.keys()
-        keys = [k for k in keys if k != "hierarchical_policy"]
-        kwargs = {k: config.habitat_baselines.rl.policy[k] for k in keys}
-        with read_write(config):
-            config.habitat_baselines.rl.policy = DAggerPolicyConfig(
-                **kwargs, original_name=config.habitat_baselines.rl.policy.name
-            )
-            config.habitat_baselines.rl.policy.name = DAggerPolicy.__name__
+        with open_dict(config.habitat_baselines.rl.policy):  # allow new keys
+            with read_write(config.habitat_baselines.rl.policy):  # allow write
+                if hasattr(
+                    config.habitat_baselines.rl.policy, "original_name"
+                ):
+                    original_name = (
+                        config.habitat_baselines.rl.policy.original_name
+                    )
+                else:
+                    original_name = config.habitat_baselines.rl.policy.name
+                config.habitat_baselines.rl.policy[
+                    "original_name"
+                ] = original_name  # the new key
+                config.habitat_baselines.rl.policy.name = DAggerPolicy.__name__
         super().__init__(config)
-        self.teacher_forcing = config.habitat_baselines.trainer_name == "ver_il"
+        self.teacher_forcing = (
+            config.habitat_baselines.trainer_name == "ver_il"
+        )
 
     def _init_train(self, resume_state):
         r"""Same as VERTrainer._init_train, but changes the environment workers to a
@@ -85,7 +95,9 @@ class VERDAggerTrainer(VERTrainer):
 
             with read_write(self.config):
                 self.config.habitat_baselines.torch_gpu_id = local_rank
-                self.config.habitat.simulator.habitat_sim_v0.gpu_device_id = local_rank
+                self.config.habitat.simulator.habitat_sim_v0.gpu_device_id = (
+                    local_rank
+                )
                 # Multiply by the number of simulators to make sure they also get unique seeds
                 self.config.habitat.seed += (
                     world_rank * self.config.habitat_baselines.num_environments
@@ -96,14 +108,18 @@ class VERDAggerTrainer(VERTrainer):
         torch.manual_seed(self.config.habitat.seed)
 
         self.mp_ctx = torch.multiprocessing.get_context("forkserver")
-        self.queues = WorkerQueues(self.config.habitat_baselines.num_environments)
+        self.queues = WorkerQueues(
+            self.config.habitat_baselines.num_environments
+        )
         """BEGINNING OF CHANGES RELATIVE TO VERTrainer._init_train"""
         cons_fn = (
             construct_il_environment_workers
             if self.teacher_forcing
             else construct_environment_workers
         )
-        self.environment_workers = cons_fn(self.config, self.mp_ctx, self.queues)
+        self.environment_workers = cons_fn(
+            self.config, self.mp_ctx, self.queues
+        )
         """END OF CHANGES RELATIVE TO VERTrainer._init_train"""
         [ew.start() for ew in self.environment_workers]
         [ew.reset() for ew in self.environment_workers]
@@ -167,9 +183,12 @@ class VERDAggerTrainer(VERTrainer):
         run_id = None
         if (
             has_report_resume_state
-            and resume_state["requeue_stats"]["report_worker_state"] is not None
+            and resume_state["requeue_stats"]["report_worker_state"]
+            is not None
         ):
-            run_id = resume_state["requeue_stats"]["report_worker_state"]["run_id"]
+            run_id = resume_state["requeue_stats"]["report_worker_state"][
+                "run_id"
+            ]
 
         self.report_worker = ReportWorker(
             self.mp_ctx,
@@ -195,7 +214,9 @@ class VERDAggerTrainer(VERTrainer):
 
         [
             ew.set_action_plugin(
-                build_action_plugin_from_policy_action_space(self.policy_action_space)
+                build_action_plugin_from_policy_action_space(
+                    self.policy_action_space
+                )
             )
             for ew in self.environment_workers
         ]
@@ -293,11 +314,14 @@ class VERDAggerTrainer(VERTrainer):
         self.actor_critic.share_memory()
 
         if self._is_distributed:
-            self.agent.init_distributed(find_unused_params=False)
+            self.agent.init_distributed(find_unused_params=True)
 
         logger.info(
             "agent number of parameters: {}".format(
-                sum(param.numel() for param in self.agent.actor_critic.parameters())
+                sum(
+                    param.numel()
+                    for param in self.agent.actor_critic.parameters()
+                )
             )
         )
         self._iw_sync = InferenceWorkerSync(
@@ -317,7 +341,9 @@ class VERDAggerTrainer(VERTrainer):
             self.preemption_decider.rollout_ends,
         )
 
-        self._transfer_policy_tensors = list(self.actor_critic.all_policy_tensors())
+        self._transfer_policy_tensors = list(
+            self.actor_critic.all_policy_tensors()
+        )
 
         self.inference_workers = [
             InferenceWorker(self.mp_ctx, i, *inference_worker_args)
@@ -438,6 +464,6 @@ class VERDAggerTrainer(VERTrainer):
             for param in self.actor_critic.net.visual_encoder.parameters():
                 param.requires_grad_(False)
 
-        self.agent = (DDPDAgger if self._is_distributed else DAgger).from_config(
-            self.actor_critic, ppo_cfg
-        )
+        self.agent = (
+            DDPDAgger if self._is_distributed else DAgger
+        ).from_config(self.actor_critic, ppo_cfg)

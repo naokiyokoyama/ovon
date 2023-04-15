@@ -236,8 +236,7 @@ class DDPDAgger(DecentralizedDistributedMixin, DAgger):
 
 class DAggerPolicyMixin:
     """Avoids computing value or action_log_probs, which are RL-only, and
-    .evaluate_actions() will be overridden to produce the correct gradients. The critic
-    is also removed so that find_unused_parameters can be set to False for DDP."""
+    .evaluate_actions() will be overridden to produce the correct gradients."""
 
     action_distribution: Union[CategoricalNet, GaussianNet]
     critic: nn.Module
@@ -246,7 +245,6 @@ class DAggerPolicyMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        del self.critic
 
     @property
     def policy_components(self):
