@@ -9,23 +9,9 @@ from sklearn.manifold import TSNE
 from ovon.utils.utils import load_pickle
 
 
-def plot_tsne(path, output_path):
-    clip_embeddings = load_pickle(path)
-
-    keys = list(clip_embeddings.keys())
-    # for key in keys:
-    #     if key not in [
-    #         "chair",
-    #         "bed",
-    #         "plant",
-    #         "toilet",
-    #         "tv_monitor",
-    #         "sofa",
-    #     ]:
-    #         del clip_embeddings[key]
-
-    features = list(clip_embeddings.values())
-    categories = list(clip_embeddings.keys())
+def plot_tsne(embeddings, output_path):
+    features = list(embeddings.values())
+    categories = list(embeddings.keys())
 
     tsne = TSNE(n_components=2, verbose=1, perplexity=20, n_iter=500)
     tsne_results = tsne.fit_transform(features)
@@ -40,7 +26,6 @@ def plot_tsne(path, output_path):
 
     pallete_size = np.unique(categories).shape[0]
 
-    # colors = ['#4f7ac9', '#e68752', '#6fc769', '#d06565', '#9470b0', '#886140', '#d783be', '#797979', '#d0b86d', '#87c4dd', '#4f7ac9', '#e68752', '#6fc769', '#d06565', '#9470b0']
     colors = sns.color_palette("hls", pallete_size)
     color_map = {}
     for i in range(len(categories)):
@@ -63,6 +48,11 @@ def plot_tsne(path, output_path):
     return tsne_results
 
 
+def plot_embeddings(path, output_path):
+    clip_embeddings = load_pickle(path)
+    plot_tsne(clip_embeddings, output_path)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -74,7 +64,7 @@ def main():
 
     args = parser.parse_args()
 
-    plot_tsne(args.path, args.output_path)
+    plot_embeddings(args.path, args.output_path)
 
 
 if __name__ == "__main__":

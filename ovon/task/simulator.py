@@ -14,6 +14,7 @@ class OVONSim(HabitatSim):
             self.navmesh_settings,
             include_static_objects=False,
         )
+        self.curr_scene_goals = {}
 
     def load_navmesh_settings(self):
         agent_cfg = self.habitat_config.agents.main_agent
@@ -38,3 +39,4 @@ class OVONSim(HabitatSim):
                 self.navmesh_settings,
                 include_static_objects=False,
             )
+            self.curr_scene_goals = {}

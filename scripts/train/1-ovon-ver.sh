@@ -2,10 +2,10 @@
 #SBATCH --job-name=ovon
 #SBATCH --output=slurm_logs/ovon-ver-%j.out
 #SBATCH --error=slurm_logs/ovon-ver-%j.err
-#SBATCH --gpus 1
+#SBATCH --gpus 4
 #SBATCH --nodes 1
 #SBATCH --cpus-per-task 10
-#SBATCH --ntasks-per-node 1
+#SBATCH --ntasks-per-node 4
 #SBATCH --constraint=a40
 #SBATCH --partition=short
 #SBATCH --exclude=cheetah,samantha,xaea-12,kitt
@@ -25,14 +25,15 @@ conda activate ovon
 
 export PYTHONPATH=/srv/flash1/rramrakhya6/spring_2023/habitat-sim/src_python/
 
-TENSORBOARD_DIR="tb/ovon/ver/resnetclip_rgb_text/seed_1/"
-CHECKPOINT_DIR="data/new_checkpoints/ovon/ver/resnetclip_rgb_text/seed_1/"
-DATA_PATH="data/datasets/ovon/hm3d/v1"
+TENSORBOARD_DIR="tb/ovon/ddppo/resnetclip_rgb_text_linear/seed_3/"
+CHECKPOINT_DIR="data/new_checkpoints/ovon/ddppo/resnetclip_rgb_text_linear/seed_3/"
+DATA_PATH="data/datasets/ovon/hm3d/v3"
 
 srun python -um ovon.run \
   --run-type train \
   --exp-config config/experiments/ddppo_objectnav_hm3d.yaml \
-  habitat_baselines.trainer_name="ddppo" \
+  habitat_baselines.trainer_name="ver" \
+  habitat_baselines.num_environments=32 \
   habitat_baselines.rl.policy.name=PointNavResNetCLIPPolicy \
   habitat_baselines.rl.ddppo.train_encoder=False \
   habitat_baselines.rl.ddppo.backbone=resnet50_clip_avgpool \
@@ -41,9 +42,9 @@ srun python -um ovon.run \
   habitat.dataset.data_path=${DATA_PATH}/train/train.json.gz \
   +habitat/task/lab_sensors@habitat.task.lab_sensors.clip_objectgoal_sensor=clip_objectgoal_sensor \
   ~habitat.task.lab_sensors.objectgoal_sensor \
-  habitat.task.lab_sensors.clip_objectgoal_sensor.cache=data/clip_embeddings/ovon_cache.pkl \
+  habitat.task.lab_sensors.clip_objectgoal_sensor.cache=data/clip_embeddings/ovon_hm3d_cache.pkl \
   habitat_baselines.rl.policy.add_clip_linear_projection=True \
   habitat.task.measurements.success.success_distance=0.25 \
   habitat.dataset.type="OVON-v1" \
   habitat.task.measurements.distance_to_goal.type=OVONDistanceToGoal \
-  habitat.simulator.type="OVONSim-v0"
+  habitat.simulator.type="OVONSim-v0" 
