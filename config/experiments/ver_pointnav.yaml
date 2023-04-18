@@ -22,6 +22,9 @@ habitat:
         reward_terms: ["distance_to_goal_reward", "collision_penalty"]
         reward_coefficients: [1.0, 1.0]
   simulator:
+    habitat_sim_v0:
+      gpu_device_id: 0
+      allow_sliding: False
     turn_angle: 30
     agents:
       main_agent:
