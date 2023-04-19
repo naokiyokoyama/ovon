@@ -73,6 +73,12 @@ def main():
         "overrides for eval.",
     )
     parser.add_argument(
+        "--text-goals",
+        "-t",
+        action="store_true",
+        help="If set, only CLIP text goals will be used for evaluation.",
+    )
+    parser.add_argument(
         "opts",
         default=None,
         nargs=argparse.REMAINDER,
@@ -193,6 +199,23 @@ def edit_config(config, args):
         )
         if hasattr(config.habitat_baselines.rl.policy, "obs_transforms"):
             config.habitat_baselines.rl.policy.obs_transforms = {}
+
+    if (
+        args.text_goals
+        and args.run_type == "eval"
+        and hasattr(config.habitat.task.lab_sensors, "clip_imagegoal_sensor")
+    ):
+        config.habitat.task.lab_sensors.pop("clip_imagegoal_sensor")
+        if hasattr(
+            config.habitat.task.lab_sensors, "clip_goal_selector_sensor"
+        ):
+            config.habitat.task.lab_sensors.pop("clip_goal_selector_sensor")
+        if not hasattr(
+            config.habitat.task.lab_sensors, "clip_objectgoal_sensor"
+        ):
+            config.habitat.task.lab_sensors.update(
+                {"clip_objectgoal_sensor": ClipObjectGoalSensorConfig()}
+            )
 
 
 if __name__ == "__main__":
