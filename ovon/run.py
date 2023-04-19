@@ -12,7 +12,7 @@ from habitat.config.default_structured_configs import register_hydra_plugin
 from habitat_baselines.run import execute_exp
 from omegaconf import OmegaConf  # keep this import for print debugging
 
-from ovon.config import HabitatConfigPlugin
+from ovon.config import ClipObjectGoalSensorConfig, HabitatConfigPlugin
 
 
 def register_plugins():

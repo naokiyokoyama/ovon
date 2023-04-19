@@ -20,7 +20,11 @@ from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
 from torchvision import transforms as T
 
-from ovon.task.sensors import ClipObjectGoalSensor
+from ovon.task.sensors import (
+    ClipObjectGoalSensor,
+    ClipImageGoalSensor,
+    ClipGoalSelectorSensor,
+)
 
 
 @baseline_registry.register_policy
@@ -160,8 +164,13 @@ class PointNavResNetCLIPNet(Net):
             depth_ckpt=depth_ckpt,
         )
         if not self.visual_encoder.is_blind:
+            visual_fc_input = self.visual_encoder.output_shape[0]
+            if ClipImageGoalSensor.cls_uuid in observation_space.spaces:
+                # Goal image is a goal embedding, gets processed as a separate
+                # input rather than along with the visual features
+                visual_fc_input -= 1024
             self.visual_fc = nn.Sequential(
-                nn.Linear(self.visual_encoder.output_shape[0], hidden_size),
+                nn.Linear(visual_fc_input, hidden_size),
                 nn.ReLU(True),
             )
         print("Obs space: {}".format(observation_space.spaces))
@@ -179,7 +188,10 @@ class PointNavResNetCLIPNet(Net):
             rnn_input_size += 32
             rnn_input_size_info["object_goal"] = 32
 
-        if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
+        if (
+            ClipObjectGoalSensor.cls_uuid in observation_space.spaces
+            or ClipImageGoalSensor.cls_uuid in observation_space.spaces
+        ):
             clip_embedding = 1024 if clip_model == "RN50" else 768
             print(
                 f"Clip embedding: {clip_embedding}, "
@@ -191,7 +203,7 @@ class PointNavResNetCLIPNet(Net):
             else:
                 object_goal_size = clip_embedding
             rnn_input_size += object_goal_size
-            rnn_input_size_info["clip_object_goal"] = object_goal_size
+            rnn_input_size_info["clip_goal"] = object_goal_size
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
@@ -265,6 +277,7 @@ class PointNavResNetCLIPNet(Net):
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         x = []
         aux_loss_state = {}
+        clip_image_goal = None
         if not self.is_blind:
             # We CANNOT use observations.get() here because
             # self.visual_encoder(observations) is an expensive operation. Therefore,
@@ -279,7 +292,12 @@ class PointNavResNetCLIPNet(Net):
             else:
                 visual_feats = self.visual_encoder(observations)
 
-            visual_feats = self.visual_fc(visual_feats)
+            if ClipImageGoalSensor.cls_uuid in observations:
+                clip_image_goal = visual_feats[:, :1024]
+                visual_feats = self.visual_fc(visual_feats[:, 1024:])
+            else:
+                visual_feats = self.visual_fc(visual_feats)
+
             aux_loss_state["perception_embed"] = visual_feats
             x.append(visual_feats)
 
@@ -294,6 +312,29 @@ class PointNavResNetCLIPNet(Net):
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
             x.append(object_goal)
+
+        if ClipImageGoalSensor.cls_uuid in observations:
+            assert clip_image_goal is not None
+            if self.add_clip_linear_projection:
+                clip_image_goal = self.obj_categories_embedding(
+                    clip_image_goal
+                )
+            x.append(clip_image_goal)
+
+        if ClipGoalSelectorSensor.cls_uuid in observations:
+            assert (
+                ClipObjectGoalSensor.cls_uuid in observations
+                and ClipImageGoalSensor.cls_uuid in observations
+            ), "Must have both object and image goals to use goal selector."
+            image_goal_embedding = x.pop()
+            object_goal = x.pop()
+            assert image_goal_embedding.shape == object_goal.shape
+            clip_goal = torch.where(
+                observations[ClipGoalSelectorSensor.cls_uuid].bool(),
+                image_goal_embedding,
+                object_goal,
+            )
+            x.append(clip_goal)
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(
@@ -383,6 +424,9 @@ class ResNetCLIPEncoder(nn.Module):
             else:
                 self.output_shape = (1024 + depth_size,)
 
+            if ClipImageGoalSensor.cls_uuid in observation_space.spaces:
+                self.output_shape = (self.output_shape[0] + 1024,)
+
             for param in self.backbone.parameters():
                 param.requires_grad = False
             for module in self.backbone.modules():
@@ -405,7 +449,20 @@ class ResNetCLIPEncoder(nn.Module):
 
         cnn_input = []
         if self.rgb:
-            rgb_observations = observations["rgb"]
+            if (
+                "rgb" in observations
+                and ClipImageGoalSensor.cls_uuid in observations
+            ):
+                # Stack them into the same batch
+                rgb_observations = torch.cat(
+                    [
+                        observations["rgb"],
+                        observations[ClipImageGoalSensor.cls_uuid],
+                    ],
+                    dim=0,
+                )
+            else:
+                rgb_observations = observations["rgb"]
             rgb_observations = rgb_observations.permute(
                 0, 3, 1, 2
             )  # BATCH x CHANNEL x HEIGHT X WIDTH
@@ -413,9 +470,20 @@ class ResNetCLIPEncoder(nn.Module):
                 [self.preprocess(rgb_image) for rgb_image in rgb_observations]
             )  # [BATCH x CHANNEL x HEIGHT X WIDTH] in torch.float32
             rgb_x = self.backbone(rgb_observations).float()
-            cnn_input.append(rgb_x)
 
-        if self.depth:
+            if (
+                "rgb" in observations
+                and ClipImageGoalSensor.cls_uuid in observations
+            ):
+                # Split them back out
+                batch_size = observations["rgb"].shape[0]
+                rgb_x, goal_x = rgb_x[:batch_size], rgb_x[batch_size:]
+                cnn_input.append(goal_x)
+                cnn_input.append(rgb_x)
+            else:
+                cnn_input.append(rgb_x)
+
+        if self.depth and "depth" in observations:
             depth_feats = self.depth_backbone({"depth": observations["depth"]})
             cnn_input.append(depth_feats)
 

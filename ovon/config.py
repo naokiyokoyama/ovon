@@ -20,6 +20,16 @@ class ClipObjectGoalSensorConfig(LabSensorConfig):
     prompt: str = "Find and go to {category}"
     cache: str = "data/ovon_cache.pickle"
 
+@dataclass
+class ClipImageGoalSensorConfig(LabSensorConfig):
+    type: str = "ClipImageGoalSensor"
+
+
+@dataclass
+class ClipGoalSelectorSensorConfig(LabSensorConfig):
+    type: str = "ClipGoalSelectorSensor"
+    image_sampling_probability: float = 0.8
+
 
 @dataclass
 class OVONPolicyConfig(PolicyConfig):
@@ -61,6 +71,20 @@ cs.store(
     group="habitat/task/lab_sensors",
     name="clip_objectgoal_sensor",
     node=ClipObjectGoalSensorConfig,
+)
+
+cs.store(
+    package=f"habitat.task.lab_sensors.clip_imagegoal_sensor",
+    group="habitat/task/lab_sensors",
+    name="clip_imagegoal_sensor",
+    node=ClipImageGoalSensorConfig,
+)
+
+cs.store(
+    package=f"habitat.task.lab_sensors.clip_goal_selector_sensor",
+    group="habitat/task/lab_sensors",
+    name="clip_goal_selector_sensor",
+    node=ClipGoalSelectorSensorConfig,
 )
 
 cs.store(
