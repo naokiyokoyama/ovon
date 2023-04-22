@@ -177,13 +177,6 @@ def edit_config(config, args):
     if args.single_env:
         config.habitat_baselines.num_environments = 1
 
-    # Remove frontier_exploration_map visualization if training
-    if (
-        args.run_type == "train"
-        and "frontier_exploration_map" in config.habitat.task.measurements
-    ):
-        config.habitat.task.measurements.pop("frontier_exploration_map")
-
     # Remove all cameras if running blind (e.g., evaluating frontier explorer)
     if args.blind:
         for k in ["depth_sensor", "rgb_sensor"]:
@@ -216,6 +209,17 @@ def edit_config(config, args):
             config.habitat.task.lab_sensors.update(
                 {"clip_objectgoal_sensor": ClipObjectGoalSensorConfig()}
             )
+
+    if args.run_type == "train":
+        for measure_name in ["frontier_exploration_map", "top_down_map"]:
+            if hasattr(
+                config.habitat.task.measurements, measure_name
+            ):
+                print(
+                    f"[run.py]: Removing {measure_name} measurement from config"
+                    f" to expedite training."
+                )
+                config.habitat.task.measurements.pop(measure_name)
 
 
 if __name__ == "__main__":

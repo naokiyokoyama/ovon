@@ -81,10 +81,19 @@ class ClipImageGoalSensor(Sensor):
         *args: Any,
         **kwargs: Any,
     ):
-        # TODO: actually calculate the correct height and width
-        self.height = 256
-        self.width = 256
         self._sim = sim
+        sensors = self._sim.sensor_suite.sensors
+        rgb_sensor_uuids = [
+            uuid
+            for uuid, sensor in sensors.items()
+            if isinstance(sensor, RGBSensor)
+        ]
+        if len(rgb_sensor_uuids) != 1:
+            raise ValueError(
+                "ImageGoalNav requires one RGB sensor,"
+                f" {len(rgb_sensor_uuids)} detected"
+            )
+        (self._rgb_sensor_uuid,) = rgb_sensor_uuids
         super().__init__(config=config)
         self._curr_ep_id = None
         self.image_goal = None
@@ -96,12 +105,9 @@ class ClipImageGoalSensor(Sensor):
         return SensorTypes.COLOR
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return spaces.Box(
-            low=0,
-            high=255,
-            shape=(self.height, self.width, 3),
-            dtype=np.uint8,
-        )
+        return self._sim.sensor_suite.observation_spaces.spaces[
+            self._rgb_sensor_uuid
+        ]
 
     def _reset(self, episode):
         self._curr_ep_id = episode.episode_id
@@ -199,7 +205,8 @@ class ImageGoalRotationSensor(Sensor):
         ]
         if len(rgb_sensor_uuids) != 1:
             raise ValueError(
-                f"ImageGoalNav requires one RGB sensor, {len(rgb_sensor_uuids)} detected"
+                "ImageGoalNav requires one RGB sensor,"
+                f" {len(rgb_sensor_uuids)} detected"
             )
 
         (self._rgb_sensor_uuid,) = rgb_sensor_uuids
@@ -222,7 +229,7 @@ class ImageGoalRotationSensor(Sensor):
         goal_position = np.array(episode.goals[0].position, dtype=np.float32)
 
         # Add rotation to episode ** NEW **
-        if self.config.sample_angle == True:
+        if self.config.sample_angle:
             angle = np.random.uniform(0, 2 * np.pi)
         else:
             # to be sure that the rotation is the same for the same episode_id

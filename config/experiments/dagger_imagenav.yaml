@@ -6,9 +6,13 @@ defaults:
     - resize_shortest_edge_base
     - center_cropper_base
     - relabel_image_goal
+    - relabel_teacher_actions
+  - /habitat/task/measurements:
+      - frontier_exploration_map
   - imagenav_locobot_hm3d
   - override /habitat/task/lab_sensors:
       - image_goal_rotation_sensor
+      - objnav_explorer
       - compass_sensor
       - gps_sensor
   - _self_
@@ -17,10 +21,13 @@ habitat:
   task:
     success_reward: 2.5
     slack_reward: -1e-3
+    lab_sensors:
+      objnav_explorer:
+        map_resolution: 128
 
 habitat_baselines:
   verbose: False
-  trainer_name: "ver"
+  trainer_name: "ver_dagger"
   torch_gpu_id: 0
   tensorboard_dir: "tb"
   video_dir: "video_dir"
@@ -45,11 +52,13 @@ habitat_baselines:
           trans_keys: ["rgb", "image_goal_rotation"]
         center_cropper:
           trans_keys: ["rgb", "image_goal_rotation"]
+        relabel_teacher_actions:
+          teacher_label: "objnav_explorer"
 
     ppo:
       # ppo params
       clip_param: 0.2
-      ppo_epoch: 2
+      ppo_epoch: 1
       num_mini_batch: 2
       value_loss_coef: 0.5
       entropy_coef: 0.01
