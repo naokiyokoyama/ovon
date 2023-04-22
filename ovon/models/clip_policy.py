@@ -12,15 +12,19 @@ from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
 from habitat_baselines.rl.ddppo.policy.resnet import resnet18
 from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
-from habitat_baselines.rl.models.rnn_state_encoder import \
-    build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import (
+    build_rnn_state_encoder,
+)
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
 from torchvision import transforms as T
 
-from ovon.task.sensors import (ClipGoalSelectorSensor, ClipImageGoalSensor,
-                               ClipObjectGoalSensor)
+from ovon.task.sensors import (
+    ClipGoalSelectorSensor,
+    ClipImageGoalSensor,
+    ClipObjectGoalSensor,
+)
 
 
 @baseline_registry.register_policy
@@ -224,7 +228,7 @@ class PointNavResNetCLIPNet(Net):
         if not self.is_blind:
             rnn_input_size += hidden_size
             rnn_input_size_info["visual_feats"] = hidden_size
-        
+
         self._hidden_size = hidden_size
 
         print("RNN input size info: ")
@@ -296,6 +300,8 @@ class PointNavResNetCLIPNet(Net):
 
             aux_loss_state["perception_embed"] = visual_feats
             x.append(visual_feats)
+
+        print("Observations: {}".format(observations.keys()))
 
         if ObjectGoalSensor.cls_uuid in observations:
             object_goal = observations[ObjectGoalSensor.cls_uuid].long()

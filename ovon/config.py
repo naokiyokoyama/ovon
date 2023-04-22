@@ -2,11 +2,7 @@ from dataclasses import dataclass
 
 from habitat.config.default_structured_configs import LabSensorConfig
 from habitat_baselines.config.default_structured_configs import (
-    HabitatBaselinesConfig,
-    HabitatBaselinesRLConfig,
-    PolicyConfig,
-    RLConfig,
-)
+    HabitatBaselinesConfig, HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
@@ -29,6 +25,12 @@ class ClipImageGoalSensorConfig(LabSensorConfig):
 class ClipGoalSelectorSensorConfig(LabSensorConfig):
     type: str = "ClipGoalSelectorSensor"
     image_sampling_probability: float = 0.8
+
+
+@dataclass
+class ImageGoalRotationSensorConfig(LabSensorConfig):
+    type: str = "ImageGoalRotationSensor"
+    sample_angle: bool = True
 
 
 @dataclass
@@ -85,6 +87,13 @@ cs.store(
     group="habitat/task/lab_sensors",
     name="clip_goal_selector_sensor",
     node=ClipGoalSelectorSensorConfig,
+)
+
+cs.store(
+    package=f"habitat.task.lab_sensors.image_goal_rotation_sensor",
+    group="habitat/task/lab_sensors",
+    name="image_goal_rotation_sensor",
+    node=ImageGoalRotationSensorConfig,
 )
 
 cs.store(
