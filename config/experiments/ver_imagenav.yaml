@@ -11,12 +11,22 @@ defaults:
       - image_goal_rotation_sensor
       - compass_sensor
       - gps_sensor
+  - override /habitat/task/measurements:
+      - distance_to_goal
+      - success
+      - spl
+      - angle_to_goal
+      - angle_success
+      - imagenav_reward
   - _self_
 
 habitat:
   task:
     success_reward: 2.5
     slack_reward: -1e-3
+
+    reward_measure: "imagenav_reward"
+    success_measure: "success"
 
 habitat_baselines:
   verbose: False

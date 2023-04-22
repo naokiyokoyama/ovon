@@ -31,7 +31,7 @@ DATA_PATH="data/datasets/ovon/hm3d/v3"
 
 srun python -um ovon.run \
   --run-type train \
-  --exp-config config/experiments/ddppo_objectnav_hm3d.yaml \
+  --exp-config config/experiments/ver_objectnav.yaml \
   habitat_baselines.trainer_name="ver" \
   habitat_baselines.num_environments=32 \
   habitat_baselines.rl.policy.name=PointNavResNetCLIPPolicy \

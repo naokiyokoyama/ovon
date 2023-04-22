@@ -15,6 +15,11 @@ habitat:
   task:
     success_reward: 2.5
     slack_reward: -1e-3
+  
+  simulator:
+    navmesh_settings:
+      agent_max_climb: 0.1
+      cell_height: 0.05
 
 habitat_baselines:
   torch_gpu_id: 0
@@ -24,7 +29,7 @@ habitat_baselines:
   eval_ckpt_path_dir: "data/new_checkpoints"
   num_environments: 32
   checkpoint_folder: "data/new_checkpoints"
-  trainer_name: "ddppo"
+  trainer_name: "ver"
   num_updates: 270000
   log_interval: 10
   num_checkpoints: 100

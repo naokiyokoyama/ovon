@@ -24,7 +24,7 @@ DATA_PATH="data/datasets/objectnav/hm3d_semantic_v0.2/v1"
 
 srun python -um ovon.run \
   --run-type train \
-  --exp-config config/experiments/ddppo_objectnav_hm3d.yaml \
+  --exp-config config/experiments/ver_objectnav.yaml \
   habitat_baselines.trainer_name="ver" \
   habitat_baselines.rl.policy.name=PointNavResNetCLIPPolicy \
   habitat_baselines.rl.ddppo.train_encoder=False \

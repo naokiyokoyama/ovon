@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 
-from habitat.config.default_structured_configs import LabSensorConfig
+from habitat.config.default_structured_configs import (EnvironmentConfig,
+                                                       HabitatConfig,
+                                                       LabSensorConfig,
+                                                       MeasurementConfig,
+                                                       SimulatorConfig)
 from habitat_baselines.config.default_structured_configs import (
-    HabitatBaselinesConfig, HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
+    HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
@@ -15,6 +19,7 @@ class ClipObjectGoalSensorConfig(LabSensorConfig):
     type: str = "ClipObjectGoalSensor"
     prompt: str = "Find and go to {category}"
     cache: str = "data/ovon_cache.pickle"
+
 
 @dataclass
 class ClipImageGoalSensorConfig(LabSensorConfig):
@@ -31,6 +36,29 @@ class ClipGoalSelectorSensorConfig(LabSensorConfig):
 class ImageGoalRotationSensorConfig(LabSensorConfig):
     type: str = "ImageGoalRotationSensor"
     sample_angle: bool = True
+
+
+@dataclass
+class AngleSuccessMeasurementConfig(MeasurementConfig):
+    type: str = "AngleSuccess"
+    success_angle: float = 25.0
+
+
+@dataclass
+class AngleToGoalMeasurementConfig(MeasurementConfig):
+    type: str = "AngleToGoal"
+
+
+@dataclass
+class ImageNavRewardMeasurementConfig(MeasurementConfig):
+    type: str = "ImageNavReward"
+    success_reward: float = 5.0
+    angle_success_reward: float = 5.0
+    slack_penalty: float = -0.1
+    use_atg_reward: bool = True
+    use_dtg_reward: bool = True
+    use_atg_fix: bool = False
+    atg_reward_distance: float = 1.0
 
 
 @dataclass
@@ -63,10 +91,32 @@ class OVONBaselinesRLConfig(HabitatBaselinesRLConfig):
     rl: OVONRLConfig = OVONRLConfig()
 
 
+@dataclass
+class NavmeshSettings:
+    agent_max_climb: float = 0.20
+    cell_height: float = 0.20
+
+
+@dataclass
+class OVONSimulatorConfig(SimulatorConfig):
+    type: str = "OVONSim-v0"
+    navmesh_settings: NavmeshSettings = NavmeshSettings()
+
+
+@dataclass
+class OVONHabitatConfig(HabitatConfig):
+    simulator: SimulatorConfig = OVONSimulatorConfig()
+
+
 # -----------------------------------------------------------------------------
 # Register configs in the Hydra ConfigStore
 # -----------------------------------------------------------------------------
 
+cs.store(
+    group="habitat",
+    name="habitat_config_base",
+    node=OVONHabitatConfig,
+)
 
 cs.store(
     package=f"habitat.task.lab_sensors.clip_objectgoal_sensor",
@@ -94,6 +144,27 @@ cs.store(
     group="habitat/task/lab_sensors",
     name="image_goal_rotation_sensor",
     node=ImageGoalRotationSensorConfig,
+)
+
+cs.store(
+    package="habitat.task.measurements.angle_success",
+    group="habitat/task/measurements",
+    name="angle_success",
+    node=AngleSuccessMeasurementConfig,
+)
+
+cs.store(
+    package="habitat.task.measurements.angle_to_goal",
+    group="habitat/task/measurements",
+    name="angle_to_goal",
+    node=AngleToGoalMeasurementConfig,
+)
+
+cs.store(
+    package="habitat.task.measurements.imagenav_reward",
+    group="habitat/task/measurements",
+    name="imagenav_reward",
+    node=ImageNavRewardMeasurementConfig,
 )
 
 cs.store(

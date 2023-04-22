@@ -228,7 +228,7 @@ class ImageGoalRotationSensor(Sensor):
     def _get_pointnav_episode_image_goal(self, episode: NavigationEpisode):
         goal_position = np.array(episode.goals[0].position, dtype=np.float32)
 
-        # Add rotation to episode ** NEW **
+        # Add rotation to episode
         if self.config.sample_angle:
             angle = np.random.uniform(0, 2 * np.pi)
         else:

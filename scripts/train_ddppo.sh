@@ -24,7 +24,7 @@ CHECKPOINT_DIR="data/new_checkpoints/objectnav/ddppo/resnetclip/seed_1"
 
 srun python -um ovon.run \
   --run-type train \
-  --exp-config config/experiments/ddppo_objectnav_hm3d.yaml \
+  --exp-config config/experiments/ver_objectnav.yaml \
   habitat_baselines.rl.policy.name=PointNavResNetCLIPPolicy \
   habitat_baselines.rl.ddppo.train_encoder=False \
   habitat_baselines.rl.ddppo.backbone=resnet50_clip_avgpool \
