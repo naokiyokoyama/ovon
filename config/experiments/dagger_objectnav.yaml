@@ -3,14 +3,13 @@
 defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
-    - center_cropper_base
-    - resize_shortest_edge_base
+    - resize
     - relabel_teacher_actions
   - /habitat/task/lab_sensors:
     - objnav_explorer
   - /habitat/task/measurements:
     - frontier_exploration_map
-  - objectnav_locobot_hm3d
+  - objectnav_stretch_hm3d
   - _self_
 
 habitat:
@@ -32,12 +31,12 @@ habitat_baselines:
   video_dir: "video_dir"
   test_episode_count: -1
   eval_ckpt_path_dir: "data/new_checkpoints"
-  num_environments: 32
+  num_environments: 64
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver_dagger"
   num_updates: 270000
   log_interval: 10
-  num_checkpoints: 1000
+  num_checkpoints: 400
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True

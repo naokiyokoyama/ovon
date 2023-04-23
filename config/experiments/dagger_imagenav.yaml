@@ -3,8 +3,7 @@
 defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
-    - resize_shortest_edge_base
-    - center_cropper_base
+    - resize
     - relabel_image_goal
     - relabel_teacher_actions
   - /habitat/task/measurements:

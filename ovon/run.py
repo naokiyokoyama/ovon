@@ -170,9 +170,9 @@ def edit_config(config, args):
         )
         config.habitat_baselines.load_resume_state_config = False
 
-    if args.debug_datapath and "OVON_DEBUG_DATAPATH" in os.environ:
-        # Use a different, much faster to load data path for debugging
-        config.habitat.dataset.data_path = os.environ["OVON_DEBUG_DATAPATH"]
+    if args.debug_datapath:
+        # Only load one scene for faster debugging
+        config.habitat.dataset.content_scenes = ['1UnKg1rAb8A']
 
     if args.single_env:
         config.habitat_baselines.num_environments = 1

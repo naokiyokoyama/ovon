@@ -379,19 +379,29 @@ class ResNetCLIPEncoder(nn.Module):
         if not self.is_blind:
             model, preprocess = clip.load(clip_model)
 
-            # expected input: C x H x W (np.uint8 in [0-255])
-            self.preprocess = T.Compose(
-                [
+            # expected input: H x W x C (np.uint8 in [0-255])
+            if (
+                observation_space.spaces["rgb"].shape[0] != 224
+                or observation_space.spaces["rgb"].shape[1] != 224
+            ):
+                print("Using CLIP preprocess for resizing+cropping to 224x224")
+                preprocess_transforms = [
                     # resize and center crop to 224
                     preprocess.transforms[0],
                     preprocess.transforms[1],
+                ]
+            else:
+                preprocess_transforms = []
+            preprocess_transforms.extend(
+                [
                     # already tensor, but want float
                     T.ConvertImageDtype(torch.float),
                     # normalize with CLIP mean, std
                     preprocess.transforms[4],
                 ]
             )
-            # expected output: C x H x W (np.float32)
+            self.preprocess = T.Compose(preprocess_transforms)
+            # expected output: H x W x C (np.float32)
 
             self.backbone = model.visual
 

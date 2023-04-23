@@ -3,9 +3,9 @@
 defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
+    - resize
     - center_cropper_base
-    - resize_shortest_edge_base
-  - objectnav_locobot_hm3d
+  - objectnav_stretch_hm3d
   - _self_
 
 habitat:
@@ -27,12 +27,12 @@ habitat_baselines:
   video_dir: "video_dir"
   test_episode_count: -1
   eval_ckpt_path_dir: "data/new_checkpoints"
-  num_environments: 32
+  num_environments: 64
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver"
   num_updates: 270000
   log_interval: 10
-  num_checkpoints: 100
+  num_checkpoints: 400
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
@@ -78,11 +78,11 @@ habitat_baselines:
       # Initialize just the visual encoder backbone with pretrained weights
       pretrained_encoder: False
       # Whether or not the visual encoder backbone will be trained.
-      train_encoder: True
+      train_encoder: False
       # Whether or not to reset the critic linear layer
       reset_critic: True
 
       # Model parameters
-      backbone: resnet50
+      backbone: resnet50_clip_avgpool
       rnn_type: LSTM
       num_recurrent_layers: 2
