@@ -4,63 +4,50 @@ defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
     - resize
-    - relabel_image_goal
-  - imagenav_stretch_hm3d
-  - override /habitat/task/lab_sensors:
-      - image_goal_rotation_sensor
-      - compass_sensor
-      - gps_sensor
-  - override /habitat/task/measurements:
-      - distance_to_goal
-      - success
-      - spl
-      - angle_to_goal
-      - angle_success
-      - imagenav_reward
+  - objectnav_locobot_hm3d
   - _self_
 
 habitat:
+  environment:
+    iterator_options:
+      max_scene_repeat_steps: 50000
   task:
     success_reward: 2.5
     slack_reward: -1e-3
-
-    reward_measure: "imagenav_reward"
-    success_measure: "success"
   
-    measurements:
-      success:
-        success_distance: 1.0
+  simulator:
+    navmesh_settings:
+      agent_max_climb: 0.1
+      cell_height: 0.05
 
 habitat_baselines:
-  verbose: False
-  trainer_name: "ver"
   torch_gpu_id: 0
   tensorboard_dir: "tb"
   video_dir: "video_dir"
   test_episode_count: -1
   eval_ckpt_path_dir: "data/new_checkpoints"
-  num_environments: 32
+  num_environments: 64
   checkpoint_folder: "data/new_checkpoints"
-  num_updates: -1
-  total_num_steps: 1e9
-  log_interval: 20
+  trainer_name: "ver"
+  num_updates: 270000
+  log_interval: 10
   num_checkpoints: 400
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
 
+  eval:
+    split: "val"
+
   rl:
 
     policy:
       name: "PointNavResNetCLIPPolicy"
-      obs_transforms:
-        resize:
-          trans_keys: ["rgb", "image_goal_rotation"]
 
     ppo:
       # ppo params
       clip_param: 0.2
-      ppo_epoch: 2
+      ppo_epoch: 4
       num_mini_batch: 2
       value_loss_coef: 0.5
       entropy_coef: 0.01
@@ -79,10 +66,6 @@ habitat_baselines:
 
       hidden_size: 512
 
-      # Use double buffered sampling, typically helps
-      # when environment time is similar or larger than
-      # policy inference time during rollout generation
-      use_double_buffered_sampler: False
     ddppo:
       sync_frac: 0.6
       # The PyTorch distributed backend to use
@@ -93,12 +76,12 @@ habitat_baselines:
       pretrained: False
       # Initialize just the visual encoder backbone with pretrained weights
       pretrained_encoder: False
-      # Whether the visual encoder backbone will be trained.
+      # Whether or not the visual encoder backbone will be trained.
       train_encoder: False
-      # Whether to reset the critic linear layer
+      # Whether or not to reset the critic linear layer
       reset_critic: True
 
       # Model parameters
-      backbone: resnet50_clip_avgattnpool
+      backbone: resnet50_clip_avgpool
       rnn_type: LSTM
       num_recurrent_layers: 2

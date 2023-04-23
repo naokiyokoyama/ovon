@@ -27,7 +27,7 @@ export PYTHONPATH=/srv/flash1/rramrakhya6/spring_2023/habitat-sim/src_python/
 
 TENSORBOARD_DIR="tb/imagenav/ver/resnetclip_avgattnpool/seed_1/"
 CHECKPOINT_DIR="data/new_checkpoints/imagenav/ver/resnetclip_avgattnpool/seed_1/"
-DATA_PATH="data/datasets/imagenav/hm3d/v2"
+DATA_PATH="data/datasets/imagenav/hm3d/v1_stretch"
 
 srun python -um ovon.run \
   --run-type train \
