@@ -31,6 +31,11 @@ habitat:
       success:
         success_distance: 1.0
 
+  simulator:
+    navmesh_settings:
+      agent_max_climb: 0.20
+      cell_height: 0.20
+
 habitat_baselines:
   verbose: False
   trainer_name: "ver"
