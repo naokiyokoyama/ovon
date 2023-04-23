@@ -7,8 +7,9 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
 from habitat_baselines.rl.ddppo.policy.resnet import resnet18
-from habitat_baselines.rl.models.rnn_state_encoder import \
-    build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import (
+    build_rnn_state_encoder,
+)
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
@@ -137,7 +138,7 @@ class ObjaverseCLIPNet(Net):
 
         self.visual_encoder = ResNetCLIPEncoder(
             observation_space,
-            pooling="none",
+            backbone_type="none",
             clip_model=clip_model,
             depth_ckpt=depth_ckpt,
         )
