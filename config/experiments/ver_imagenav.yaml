@@ -7,16 +7,16 @@ defaults:
     - relabel_image_goal
   - imagenav_stretch_hm3d
   - override /habitat/task/lab_sensors:
-      - image_goal_rotation_sensor
-      - compass_sensor
-      - gps_sensor
+    - image_goal_rotation_sensor
+    - compass_sensor
+    - gps_sensor
   - override /habitat/task/measurements:
-      - distance_to_goal
-      - success
-      - spl
-      - angle_to_goal
-      - angle_success
-      - imagenav_reward
+    - distance_to_goal
+    - success
+    - spl
+    - angle_to_goal
+    - angle_success
+    - imagenav_reward
   - _self_
 
 habitat:
