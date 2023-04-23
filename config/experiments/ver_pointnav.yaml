@@ -11,6 +11,8 @@ defaults:
     - distance_to_goal_reward
     - collision_penalty
     - sum_reward
+  - /habitat_baselines/rl/policy/obs_transforms:
+    - resize
   - override /habitat/simulator/agents@habitat.simulator.agents.main_agent: depth_agent
   - _self_
 
@@ -47,12 +49,12 @@ habitat_baselines:
   video_dir: "video_dir"
   test_episode_count: -1
   eval_ckpt_path_dir: "data/new_checkpoints"
-  num_environments: 40
+  num_environments: 64
   checkpoint_folder: "data/new_checkpoints"
   num_updates: -1
   total_num_steps: 2.5e9
   log_interval: 10
-  num_checkpoints: 100
+  num_checkpoints: 400
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
