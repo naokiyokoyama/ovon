@@ -37,3 +37,4 @@ srun python -um ovon.run \
   habitat_baselines.checkpoint_folder=${CHECKPOINT_DIR} \
   habitat.dataset.data_path=${DATA_PATH}/train/train.json.gz \
   habitat.simulator.type="OVONSim-v0" \
+  habitat_baselines.log_interval=20 \

@@ -52,12 +52,12 @@ class AngleToGoalMeasurementConfig(MeasurementConfig):
 @dataclass
 class ImageNavRewardMeasurementConfig(MeasurementConfig):
     type: str = "ImageNavReward"
-    success_reward: float = 5.0
-    angle_success_reward: float = 5.0
-    slack_penalty: float = -0.1
+    success_reward: float = 2.5
+    angle_success_reward: float = 2.5
+    slack_penalty: float = -0.01
     use_atg_reward: bool = True
     use_dtg_reward: bool = True
-    use_atg_fix: bool = False
+    use_atg_fix: bool = True
     atg_reward_distance: float = 1.0
 
 

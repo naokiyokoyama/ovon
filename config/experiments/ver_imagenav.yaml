@@ -26,6 +26,10 @@ habitat:
 
     reward_measure: "imagenav_reward"
     success_measure: "success"
+  
+    measurements:
+      success:
+        success_distance: 1.0
 
 habitat_baselines:
   verbose: False
@@ -39,7 +43,7 @@ habitat_baselines:
   checkpoint_folder: "data/new_checkpoints"
   num_updates: -1
   total_num_steps: 1e9
-  log_interval: 100
+  log_interval: 20
   num_checkpoints: 400
   # Force PyTorch to be single threaded as
   # this improves performance considerably
