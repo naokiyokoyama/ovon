@@ -24,6 +24,10 @@ habitat:
         map_resolution: 128
   dataset:
     split: train_single_story
+  simulator:
+    navmesh_settings:
+      agent_max_climb: 0.1
+      cell_height: 0.05
 
 habitat_baselines:
   torch_gpu_id: 0
