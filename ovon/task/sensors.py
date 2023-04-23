@@ -50,7 +50,9 @@ class ClipObjectGoalSensor(Sensor):
         return SensorTypes.SEMANTIC
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return spaces.Box(low=0, high=np.inf, shape=(1024,), dtype=np.float32)
+        return spaces.Box(
+            low=-np.inf, high=np.inf, shape=(1024,), dtype=np.float32
+        )
 
     def get_observation(
         self,
@@ -234,7 +236,7 @@ class ImageGoalRotationSensor(Sensor):
         else:
             # to be sure that the rotation is the same for the same episode_id
             # since the task is currently using pointnav Dataset.
-            seed = abs(hash(episode.episode_id)) % (2**32)
+            seed = abs(hash(episode.episode_id)) % (2 ** 32)
             rng = np.random.RandomState(seed)
             angle = rng.uniform(0, 2 * np.pi)
         source_rotation = [0, np.sin(angle / 2), 0, np.cos(angle / 2)]
