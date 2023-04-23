@@ -50,7 +50,7 @@ class ClipObjectGoalSensor(Sensor):
         return SensorTypes.SEMANTIC
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return spaces.Box(low=0, high=np.inf, shape=(1024,), dtype=np.int64)
+        return spaces.Box(low=0, high=np.inf, shape=(1024,), dtype=np.float32)
 
     def get_observation(
         self,

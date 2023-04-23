@@ -299,9 +299,7 @@ class PointNavResNetCLIPNet(Net):
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
         if ClipObjectGoalSensor.cls_uuid in observations:
-            object_goal = observations[ClipObjectGoalSensor.cls_uuid].type(
-                torch.float32
-            )
+            object_goal = observations[ClipObjectGoalSensor.cls_uuid]
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
             x.append(object_goal)
