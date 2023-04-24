@@ -3,6 +3,7 @@ import gzip
 import json
 import os
 import pickle
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -57,7 +58,11 @@ def write_dataset(data, path):
 
 
 def is_on_same_floor(height, ref_floor_height, ceiling_height=0.5):
-    return (ref_floor_height - ceiling_height) <= height < (ref_floor_height + ceiling_height)
+    return (
+        (ref_floor_height - ceiling_height)
+        <= height
+        < (ref_floor_height + ceiling_height)
+    )
 
 
 def draw_point(sim, top_down_map, position, point_type, point_padding=2):
@@ -138,7 +143,12 @@ def load_encoder(encoder, path):
 def count_episodes(path):
     files = glob.glob(os.path.join(path, "*.json.gz"))
     count = 0
+    categories = defaultdict(int)
     for f in tqdm(files):
         dataset = load_dataset(f)
+        for episode in dataset["episodes"]:
+            categories[episode["object_category"]] += 1
         count += len(dataset["episodes"])
     print("Total episodes: {}".format(count))
+    print("Categories: {}".format(categories))
+    print("Total categories: {}".format(len(categories)))

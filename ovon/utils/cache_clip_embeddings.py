@@ -16,7 +16,6 @@ def tokenize_and_batch(clip, goal_categories):
     tokens = []
     for category in goal_categories:
         prompt = PROMPT.format(category=category)
-        print("Prompt: {}".format(prompt))
         tokens.append(clip.tokenize(prompt, context_length=77).numpy())
     return torch.tensor(np.array(tokens)).cuda()
 
@@ -51,15 +50,21 @@ def load_categories_from_dataset(path):
 
 def main(dataset_path, output_path):
     goal_categories = load_categories_from_dataset(dataset_path)
-    val_goal_categories = load_categories_from_dataset(dataset_path.replace("train", "val"))
+    val_goal_categories = load_categories_from_dataset(
+        dataset_path.replace("train", "val")
+    )
     goal_categories.extend(val_goal_categories)
 
     unseen_categories = set(val_goal_categories) - set(goal_categories)
 
     print("Total goal categories: {}".format(len(goal_categories)))
-    print("Train categories: {}, Val categories: {}, Unseen Val categories: {}".format(
-        len(goal_categories), len(val_goal_categories), len(unseen_categories)
-    ))
+    print(
+        "Train categories: {}, Val categories: {}, Unseen Val categories: {}".format(
+            len(goal_categories),
+            len(val_goal_categories),
+            len(unseen_categories),
+        )
+    )
     cache_embeddings(goal_categories, output_path)
 
 

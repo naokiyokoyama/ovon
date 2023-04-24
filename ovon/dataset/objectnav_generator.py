@@ -17,8 +17,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import trimesh
-from habitat.config.default_structured_configs import \
-    HabitatSimSemanticSensorConfig
+from habitat.config.default_structured_configs import (
+    HabitatSimSemanticSensorConfig,
+)
 from habitat_sim import bindings as hsim
 from habitat_sim._ext.habitat_sim_bindings import SemanticObject
 from habitat_sim.agent.agent import AgentConfiguration, AgentState
@@ -26,14 +27,18 @@ from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_two_vectors, quat_to_coeffs
 from numpy import ndarray
 from sklearn.cluster import AgglomerativeClustering
+
 # from ovon.dataset.visualization import plot_area  # noqa:F401
 # from ovon.dataset.visualization import save_candidate_imgs
 from tqdm import tqdm
 
 from ovon.dataset.ovon_dataset import OVONEpisode
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (ObjectCategoryMapping, WordnetMapping,
-                                         get_hm3d_semantic_scenes)
+from ovon.dataset.semantic_utils import (
+    ObjectCategoryMapping,
+    WordnetMapping,
+    get_hm3d_semantic_scenes,
+)
 
 
 class ObjectGoalGenerator:
@@ -86,6 +91,7 @@ class ObjectGoalGenerator:
         verbose: bool = False,
         plot_folder: str = "data/visualizations/cluster_infos/",
         sample_start_poses_wrt_navmesh_clusters: bool = False,
+        disable_euc_to_geo_ratio_check: bool = False,
     ) -> None:
         self.semantic_spec_filepath = semantic_spec_filepath
         self.img_size = img_size
@@ -108,7 +114,10 @@ class ObjectGoalGenerator:
         self.single_floor_threshold = single_floor_threshold
         self.verbose = verbose
         self.plot_folder = plot_folder
-        self.sample_start_poses_wrt_navmesh_clusters = sample_start_poses_wrt_navmesh_clusters
+        self.sample_start_poses_wrt_navmesh_clusters = (
+            sample_start_poses_wrt_navmesh_clusters
+        )
+        self.disable_euc_to_geo_ratio_check = disable_euc_to_geo_ratio_check
         self.wordnet_map = WordnetMapping(mapping_file=wordnet_mapping_file)
         self.cat_map = ObjectCategoryMapping(
             mapping_file=mapping_file,
@@ -299,16 +308,14 @@ class ObjectGoalGenerator:
 
         # Filter out invalid clusters
         valid_mask = (
-            (distance_to_clusters >= self.start_distance_limits[0]) & \
-            (distance_to_clusters <= self.start_distance_limits[1])
-        )
+            distance_to_clusters >= self.start_distance_limits[0]
+        ) & (distance_to_clusters <= self.start_distance_limits[1])
         target_positions = np.array(list(itertools.chain(*viewpoint_locs)))
         # Ensure that cluster is on same floor as atleast 1 object viewpoint
         for i, cluster_info in enumerate(cluster_centers):
             valid_mask[i] = valid_mask[i] & np.any(
-                np.abs(
-                    cluster_info['center'][1] - target_positions[:, 1]
-                ) < 0.30
+                np.abs(cluster_info["center"][1] - target_positions[:, 1])
+                < 0.30
             )
 
         valid_clusters = []
@@ -317,12 +324,16 @@ class ObjectGoalGenerator:
                 valid_clusters.append(cluster_centers[i])
 
         if len(valid_clusters) == 0:
-            raise RuntimeError(f"No valid clusters: {len(valid_clusters)}/{len(cluster_centers)}")
+            raise RuntimeError(
+                f"No valid clusters: {len(valid_clusters)}/{len(cluster_centers)}"
+            )
 
         # Divide episodes across clusters
         cluster_centers = valid_clusters
         NC = len(cluster_centers)
-        episodes_per_cluster = np.zeros((len(cluster_centers), ), dtype=np.int32)
+        episodes_per_cluster = np.zeros(
+            (len(cluster_centers),), dtype=np.int32
+        )
 
         if NC <= self.start_poses_per_obj:
             # Case 1: There are more episodes than clusters
@@ -338,21 +349,25 @@ class ObjectGoalGenerator:
             # Case 2: There are fewer episodes than clusters
             ## Sample one episode per cluster for a random subset of clusters.
             random_order = np.random.permutation(NC)
-            for i in random_order[:self.start_poses_per_obj]:
+            for i in random_order[: self.start_poses_per_obj]:
                 episodes_per_cluster[i] = 1
-        
 
         pathfinder = sim.pathfinder
         for i, num_cluster_episodes in enumerate(episodes_per_cluster):
             episode_count = 0
-            cluster_center = cluster_centers[i]['center']
-            cluster_radius = max(3 * cluster_centers[i]['stddev'], 2.0)
+            cluster_center = cluster_centers[i]["center"]
+            cluster_radius = max(3 * cluster_centers[i]["stddev"], 2.0)
 
-            while episode_count < num_cluster_episodes and num_cluster_episodes > 0:
+            while (
+                episode_count < num_cluster_episodes
+                and num_cluster_episodes > 0
+            ):
                 for _ in range(self.start_retries):
-                    start_position = pathfinder.get_random_navigable_point_near(
-                        cluster_center, cluster_radius
-                    ).astype(np.float32)
+                    start_position = (
+                        pathfinder.get_random_navigable_point_near(
+                            cluster_center, cluster_radius
+                        ).astype(np.float32)
+                    )
 
                     if (
                         start_position is None
@@ -378,7 +393,9 @@ class ObjectGoalGenerator:
                         closest_goals.append((geo_dist, closest_point))
 
                     geo_dists, goals_sorted = zip(
-                        *sorted(zip(closest_goals, goals), key=lambda x: x[0][0])
+                        *sorted(
+                            zip(closest_goals, goals), key=lambda x: x[0][0]
+                        )
                     )
 
                     geo_dist, closest_pt = geo_dists[0]
@@ -430,7 +447,7 @@ class ObjectGoalGenerator:
                     episode_count += 1
                     break
         return start_positions, start_rotations
-    
+
     def _sample_start_poses(
         self,
         sim: Simulator,
@@ -488,15 +505,16 @@ class ObjectGoalGenerator:
                 ):
                     continue
 
-                dist_ratio = geo_dist / np.linalg.norm(
-                    start_position - closest_pt
-                )
-                if dist_ratio < self.min_geo_to_euc_ratio:
-                    continue
+                if not self.disable_euc_to_geo_ratio_check:
+                    dist_ratio = geo_dist / np.linalg.norm(
+                        start_position - closest_pt
+                    )
+                    if dist_ratio < self.min_geo_to_euc_ratio:
+                        continue
 
-                # aggressive _ratio_sample_rate (copied from PointNav)
-                if np.random.rand() > (20 * (dist_ratio - 0.98) ** 2):
-                    continue
+                    # aggressive _ratio_sample_rate (copied from PointNav)
+                    if np.random.rand() > (20 * (dist_ratio - 0.98) ** 2):
+                        continue
 
                 # Check that the shortest path points are all on the same floor
                 path = habitat_sim.ShortestPath()
@@ -599,8 +617,10 @@ class ObjectGoalGenerator:
         if not with_start_poses:
             return result
         return result
-    
-    def dense_sampling_trimesh(self, triangles, density=25.0, max_points=200000):
+
+    def dense_sampling_trimesh(
+        self, triangles, density=25.0, max_points=200000
+    ):
         # Create trimesh mesh from triangles
         t_vertices = triangles.reshape(-1, 3)
         t_faces = np.arange(0, t_vertices.shape[0]).reshape(-1, 3)
@@ -610,18 +630,25 @@ class ObjectGoalGenerator:
         t_pts, _ = trimesh.sample.sample_surface_even(t_mesh, n_points)
         return t_pts
 
-    def _cluster_navmesh(self, sim: Simulator, goals_by_category: Dict[str, Any], scene_name: str):
+    def _cluster_navmesh(
+        self,
+        sim: Simulator,
+        goals_by_category: Dict[str, Any],
+        scene_name: str,
+    ):
         # Discover navmesh clusters
         navmesh_triangles = np.array(sim.pathfinder.build_navmesh_vertices())
         navmesh_pc = self.dense_sampling_trimesh(navmesh_triangles)
-        
+
         clustering = AgglomerativeClustering(
-            n_clusters=None, affinity="euclidean", distance_threshold=1.0,
+            n_clusters=None,
+            affinity="euclidean",
+            distance_threshold=1.0,
         ).fit(navmesh_pc)
-        
+
         labels = clustering.labels_
         n_clusters = clustering.n_clusters_
-        
+
         cluster_infos = []
         for i in range(n_clusters):
             center = navmesh_pc[labels == i, :].mean(axis=0)
@@ -630,9 +657,9 @@ class ObjectGoalGenerator:
                 locs = navmesh_pc[labels == i, :].tolist()
                 stddev = np.linalg.norm(np.std(locs, axis=0)).item()
                 cluster_infos.append(
-                    {'center': center, 'locs': locs, 'stddev': stddev}
+                    {"center": center, "locs": locs, "stddev": stddev}
                 )
-        print(f'====> Calculated cluster infos. # clusters: {n_clusters}')
+        print(f"====> Calculated cluster infos. # clusters: {n_clusters}")
 
         # Calculate distances from goals to cluster centers
         goal_category_to_cluster_distances = {}
@@ -643,23 +670,30 @@ class ObjectGoalGenerator:
                     object_vps.append(view_point["agent_state"]["position"])
             goal_distances = []
             for i, cluster_info in enumerate(cluster_infos):
-                dist, _ = self._geodesic_distance(sim, cluster_info['center'], object_vps)
+                dist, _ = self._geodesic_distance(
+                    sim, cluster_info["center"], object_vps
+                )
                 goal_distances.append(dist)
             goal_category_to_cluster_distances[cat] = goal_distances
 
         if self.verbose:
             os.makedirs(
-                os.path.join(self.plot_folder, "split", scene_name), exist_ok=True
+                os.path.join(self.plot_folder, "split", scene_name),
+                exist_ok=True,
             )
             # Plot distances for visualization
             plt.figure(figsize=(8, 8))
             hist_data = list(filter(math.isfinite, goal_distances))
-            hist_data = pd.DataFrame.from_dict({"Geodesic distance": hist_data})
+            hist_data = pd.DataFrame.from_dict(
+                {"Geodesic distance": hist_data}
+            )
             sns.histplot(data=hist_data, x="Geodesic distance")
             plt.title(cat)
             plt.tight_layout()
             plt.savefig(
-                os.path.join(self.plot_folder, "split", scene_name, f"{cat}.png")
+                os.path.join(
+                    self.plot_folder, "split", scene_name, f"{cat}.png"
+                )
             )
         return goal_category_to_cluster_distances, cluster_infos
 
@@ -692,9 +726,12 @@ class ObjectGoalGenerator:
                 results.append(
                     (obj.id, obj.category.name(), len(goal["view_points"]))
                 )
-        
+
         if self.sample_start_poses_wrt_navmesh_clusters:
-            goal_category_to_cluster_distances, cluster_infos = self._cluster_navmesh(sim, object_goals, scene)
+            (
+                goal_category_to_cluster_distances,
+                cluster_infos,
+            ) = self._cluster_navmesh(sim, object_goals, scene)
 
         all_goals = []
         for object_category, goals in tqdm(object_goals.items()):
@@ -719,11 +756,16 @@ class ObjectGoalGenerator:
                     ] = children_object_categories
 
             if self.sample_start_poses_wrt_navmesh_clusters:
-                start_positions, start_rotations = self._sample_start_poses_wrt_clusters(
+                (
+                    start_positions,
+                    start_rotations,
+                ) = self._sample_start_poses_wrt_clusters(
                     sim,
                     obj_goals,
                     cluster_infos,
-                    np.array(goal_category_to_cluster_distances[object_category])
+                    np.array(
+                        goal_category_to_cluster_distances[object_category]
+                    ),
                 )
             else:
                 start_positions, start_rotations = self._sample_start_poses(
@@ -838,7 +880,13 @@ class ObjectGoalGenerator:
             children_object_categories=children_object_categories,
         )
 
-    def make_episodes(self, object_goals: Dict, scene: str, episodes_per_object: int = -1, split: str = "train"):
+    def make_episodes(
+        self,
+        object_goals: Dict,
+        scene: str,
+        episodes_per_object: int = -1,
+        split: str = "train",
+    ):
         dataset = habitat.datasets.make_dataset("ObjectNav-v1")
         dataset.category_to_task_category_id = {}
         dataset.category_to_scene_annotation_category_id = {}
@@ -858,7 +906,7 @@ class ObjectGoalGenerator:
                     sum(
                         [len(gg["view_points"]) for gg in goal["object_goals"]]
                     ),
-                    len(goal["start_positions"])
+                    len(goal["start_positions"]),
                 )
             )
 
@@ -888,13 +936,16 @@ class ObjectGoalGenerator:
                 )
                 episodes_for_object.append(episode)
                 episode_count += 1
-            
+
             if split != "train" and episodes_per_object > 0:
-                episodes_for_object = random.sample(episodes_for_object, min(episodes_per_object, len(episodes_for_object)))
+                episodes_for_object = random.sample(
+                    episodes_for_object,
+                    min(episodes_per_object, len(episodes_for_object)),
+                )
 
             dataset.episodes.extend(episodes_for_object)
 
-            # Clean up children object categories            
+            # Clean up children object categories
             for o_g in goal["object_goals"]:
                 del o_g["children_object_categories"]
 
@@ -903,19 +954,24 @@ class ObjectGoalGenerator:
 
 
 def make_episodes_for_scene(args):
-    ( 
+    (
         scene,
         outpath,
         device_id,
         split,
         start_poses_per_object,
         episodes_per_object,
+        disable_euc_to_geo_ratio_check,
     ) = args
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
-    
+
     scene_name = os.path.basename(scene).split(".")[0]
-    print("Processing scene: {}, output_path: {}".format(scene, os.path.join(outpath, "{}.json.gz".format(scene_name))))
+    print(
+        "Processing scene: {}, output_path: {}".format(
+            scene, os.path.join(outpath, "{}.json.gz".format(scene_name))
+        )
+    )
     if os.path.exists(os.path.join(outpath, "{}.json.gz".format(scene_name))):
         print("Skipping scene: {}".format(scene))
         return
@@ -924,9 +980,9 @@ def make_episodes_for_scene(args):
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
         img_size=(512, 512),
         hfov=90,
-        agent_height=0.88,
-        agent_radius=0.18,
-        sensor_height=0.88,
+        agent_height=1.41,
+        agent_radius=0.17,
+        sensor_height=1.31,
         pose_sampler_args={
             "r_min": 0.5,
             "r_max": 2.0,
@@ -951,13 +1007,19 @@ def make_episodes_for_scene(args):
         wordnet_mapping_file="data/wordnet/wordnet_mapping.json",
         device_id=device_id,
         sample_dense_viewpoints=True,
+        disable_euc_to_geo_ratio_check=disable_euc_to_geo_ratio_check,
     )
 
     object_goals = objectgoal_maker.make_object_goals(
         scene=scene, with_viewpoints=True, with_start_poses=True
     )
     print("Scene: {}".format(scene))
-    episode_dataset = objectgoal_maker.make_episodes(object_goals, scene, episodes_per_object=episodes_per_object, split=split)
+    episode_dataset = objectgoal_maker.make_episodes(
+        object_goals,
+        scene,
+        episodes_per_object=episodes_per_object,
+        split=split,
+    )
 
     scene_name = os.path.basename(scene).split(".")[0]
     save_to = os.path.join(outpath, f"{scene_name}.json.gz")
@@ -967,23 +1029,15 @@ def make_episodes_for_scene(args):
 
 
 def make_episodes_for_split(
+    scenes: List[str],
     split: str,
     outpath: str,
-    num_scenes: str,
     tasks_per_gpu: int = 1,
     enable_multiprocessing: bool = False,
     start_poses_per_object: int = 2000,
     episodes_per_object: int = -1,
+    disable_euc_to_geo_ratio_check: bool = False,
 ):
-    scenes = list(
-        get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split]
-    )
-    scenes = sorted(scenes)
-
-    if num_scenes > 0:
-        scenes = scenes[:num_scenes]
-    print(scenes)
-
     dataset = habitat.datasets.make_dataset("OVON-v1")
 
     os.makedirs(outpath.format(split), exist_ok=True)
@@ -1010,7 +1064,17 @@ def make_episodes_for_split(
             deviceId = deviceIds[0]
             if i < gpus * tasks_per_gpu or len(deviceIds) == 0:
                 deviceId = i % gpus
-            items.append((s, outpath.format(split), deviceId, split, start_poses_per_object, episodes_per_object))
+            items.append(
+                (
+                    s,
+                    outpath.format(split),
+                    deviceId,
+                    split,
+                    start_poses_per_object,
+                    episodes_per_object,
+                    disable_euc_to_geo_ratio_check,
+                )
+            )
 
         mp_ctx = multiprocessing.get_context("forkserver")
         with mp_ctx.Pool(cpu_threads) as pool, tqdm(
@@ -1021,12 +1085,25 @@ def make_episodes_for_split(
     else:
         for scene in tqdm(scenes, total=len(scenes), dynamic_ncols=True):
             make_episodes_for_scene(
-                (scene, outpath.format(split), deviceIds[0], split, start_poses_per_object, episodes_per_object)
+                (
+                    scene,
+                    outpath.format(split),
+                    deviceIds[0],
+                    split,
+                    start_poses_per_object,
+                    episodes_per_object,
+                    disable_euc_to_geo_ratio_check,
+                )
             )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--scene",
+        type=str,
+        default=None,
+    )
     parser.add_argument(
         "--split",
         type=str,
@@ -1035,7 +1112,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-path",
         type=str,
-        default="data/datasets/ovon/hm3d/v1",
+        default="data/datasets/ovon/hm3d/v1_stretch/",
     )
     parser.add_argument(
         "--num-scenes",
@@ -1062,15 +1139,42 @@ if __name__ == "__main__":
         type=int,
         default=0,
     )
+    parser.add_argument(
+        "--disable-euc-geo-ratio-check",
+        action="store_true",
+        dest="disable_euc_to_geo_ratio_check",
+    )
 
     args = parser.parse_args()
+    scenes = None
+    if args.scene is not None:
+        scene_id = args.scene.split(".")[0] + ".basis.glb"
+        scenes = [scene_id]
+    else:
+        scenes = list(
+            get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [args.split])[
+                args.split
+            ]
+        )
+        scenes = sorted(scenes)
+
+    if args.num_scenes > 0:
+        scenes = scenes[: args.num_scenes]
+    print(scenes)
+    print(
+        "Start poses per object: {}, Episodes per object: {}, Split: {}".format(
+            args.start_poses_per_object, args.episodes_per_object, args.split
+        )
+    )
+
     outpath = os.path.join(args.output_path, "{}/content/".format(args.split))
     make_episodes_for_split(
+        scenes,
         args.split,
         outpath,
-        args.num_scenes,
         args.tasks_per_gpu,
         args.enable_multiprocessing,
         args.start_poses_per_object,
         args.episodes_per_object,
+        args.disable_euc_to_geo_ratio_check,
     )

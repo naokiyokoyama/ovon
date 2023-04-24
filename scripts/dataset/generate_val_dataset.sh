@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=ovon
+#SBATCH --job-name=ovon-dgen
 #SBATCH --output=slurm_logs/dataset-%j.out
 #SBATCH --error=slurm_logs/dataset-%j.err
-#SBATCH --gpus 2
+#SBATCH --gpus 1
 #SBATCH --nodes 1
 #SBATCH --cpus-per-task 16
 #SBATCH --ntasks-per-node 1
-#SBATCH --constraint=a40
 #SBATCH --partition=short
 #SBATCH --exclude=conroy,ig-88
 #SBATCH --signal=USR1@100
@@ -33,6 +32,7 @@ srun python ovon/dataset/objectnav_generator.py \
   --num-scenes $NUM_SCENES \
   --tasks-per-gpu $NUM_TASKS \
   --start-poses-per-object 200 \
-  --episodes-per-object 50 \
+  --episodes-per-object 10 \
   --output-path $OUTPUT_PATH \
-  --multiprocessing
+  --multiprocessing \
+  --disable-euc-geo-ratio-check
