@@ -2,9 +2,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from habitat_baselines.rl.ddppo.policy.running_mean_and_var import (
-    RunningMeanAndVar,
-)
+from habitat_baselines.rl.ddppo.policy.running_mean_and_var import \
+    RunningMeanAndVar
 from torch import nn as nn
 from torch.nn import functional as F
 

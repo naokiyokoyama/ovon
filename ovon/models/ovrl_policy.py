@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
+import clip
 import torch
 import torch.nn as nn
 from gym import spaces
@@ -9,15 +10,15 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import (
-    build_rnn_state_encoder,
-)
+from habitat_baselines.rl.models.rnn_state_encoder import \
+    build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
+from torchvision import transforms as T
 
 from ovon.models.encoders.visual_encoder import VisualEncoder
 from ovon.models.transforms import get_transform
-from ovon.task.sensors import ClipObjectGoalSensor
+from ovon.task.sensors import ClipImageGoalSensor, ClipObjectGoalSensor
 from ovon.utils.utils import load_encoder
 
 
@@ -58,6 +59,7 @@ class OVRLPolicyNet(Net):
         num_environments: int = 1,
     ):
         super().__init__()
+        print("Policy being init.............")
 
         self.prev_action_embedding: nn.Module
         self.discrete_actions = discrete_actions
@@ -132,6 +134,14 @@ class OVRLPolicyNet(Net):
             rnn_input_size += 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
+            clip_embedding = 1024 if clip_model == "RN50" else 768
+            if self.add_clip_linear_projection:
+                self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
+                rnn_input_size += 256
+            else:
+                rnn_input_size += clip_embedding
+
+        if ClipImageGoalSensor.cls_uuid in observation_space.spaces:
             clip_embedding = 1024 if clip_model == "RN50" else 768
             if self.add_clip_linear_projection:
                 self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
@@ -225,6 +235,15 @@ class OVRLPolicyNet(Net):
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
             x.append(object_goal)
+
+        if ClipImageGoalSensor.cls_uuid in observations:
+            clip_image_goal = observations[ClipImageGoalSensor.cls_uuid]
+            assert clip_image_goal is not None
+            if self.add_clip_linear_projection:
+                clip_image_goal = self.obj_categories_embedding(
+                    clip_image_goal
+                )
+            x.append(clip_image_goal)
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(
@@ -382,3 +401,69 @@ class OVRLPolicy(NetPolicy):
             add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
             num_environments=config.habitat_baselines.num_environments,
         )
+
+
+class ResNetCLIPGoalEncoder(nn.Module):
+    def __init__(
+        self,
+        observation_space: spaces.Dict,
+        backbone_type="attnpool",
+        clip_model="RN50",
+        obs_uuid: str = "clip_imagegoal",
+    ):
+        super().__init__()
+
+        self.backbone_type = backbone_type
+        self.obs_uuid = obs_uuid
+
+        model, preprocess = clip.load(clip_model)
+
+        # expected input: H x W x C (np.uint8 in [0-255])
+        if (
+            observation_space.spaces["rgb"].shape[0] != 224
+            or observation_space.spaces["rgb"].shape[1] != 224
+        ):
+            print("Using CLIPGoal preprocess for resizing+cropping to 224x224")
+            preprocess_transforms = [
+                # resize and center crop to 224
+                preprocess.transforms[0],
+                preprocess.transforms[1],
+            ]
+        else:
+            preprocess_transforms = []
+        preprocess_transforms.extend(
+            [
+                # already tensor, but want float
+                T.ConvertImageDtype(torch.float),
+                # normalize with CLIP mean, std
+                preprocess.transforms[4],
+            ]
+        )
+        self.preprocess = T.Compose(preprocess_transforms)
+        # expected output: H x W x C (np.float32)
+
+        self.backbone = model.visual
+
+        self.output_shape = (1024,)
+
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+        for module in self.backbone.modules():
+            if "BatchNorm" in type(module).__name__:
+                module.momentum = 0.0
+        self.backbone.eval()
+
+    @property
+    def is_blind(self):
+        return self.rgb is False and self.depth is False
+
+    def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
+        obs = observations[self.obs_uuid]
+
+        obs = obs.permute(0, 3, 1, 2)  # BATCH x CHANNEL x HEIGHT X WIDTH
+        obs = torch.stack(
+            [self.preprocess(img) for img in obs]
+        )  # [BATCH x CHANNEL x HEIGHT X WIDTH] in torch.float32
+        x = self.backbone(obs)
+
+        return x

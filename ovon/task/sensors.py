@@ -1,3 +1,4 @@
+import hashlib
 import random
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -236,7 +237,7 @@ class ImageGoalRotationSensor(Sensor):
         else:
             # to be sure that the rotation is the same for the same episode_id
             # since the task is currently using pointnav Dataset.
-            seed = abs(hash(episode.episode_id)) % (2 ** 32)
+            seed = abs(hash(episode.episode_id)) % (2**32)
             rng = np.random.RandomState(seed)
             angle = rng.uniform(0, 2 * np.pi)
         source_rotation = [0, np.sin(angle / 2), 0, np.cos(angle / 2)]
@@ -264,3 +265,49 @@ class ImageGoalRotationSensor(Sensor):
         self._current_episode_id = episode_uniq_id
 
         return self._current_image_goal
+
+
+@registry.register_sensor
+class CurrentEpisodeUUIDSensor(Sensor):
+    r"""Sensor for current episode uuid observations.
+    Args:
+        sim: reference to the simulator for calculating task observations.
+        config: config for the ImageGoal sensor.
+    """
+    cls_uuid: str = "current_episode_uuid"
+
+    def __init__(
+        self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any
+    ):
+        self._sim = sim
+        self._current_episode_id: Optional[str] = None
+
+        super().__init__(config=config)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def _get_sensor_type(self, *args: Any, **kwargs: Any):
+        return SensorTypes.TENSOR
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return spaces.Box(
+            low=np.iinfo(np.int64).min,
+            high=np.iinfo(np.int64).max,
+            shape=(1,),
+            dtype=np.int64,
+        )
+
+    def get_observation(
+        self,
+        *args: Any,
+        observations,
+        episode: NavigationEpisode,
+        **kwargs: Any,
+    ):
+        episode_uniq_id = f"{episode.scene_id} {episode.episode_id}"
+        episode_uuid = (
+            int(hashlib.sha1(episode_uniq_id.encode("utf-8")).hexdigest(), 16)
+            % 10**8
+        )
+        return episode_uuid

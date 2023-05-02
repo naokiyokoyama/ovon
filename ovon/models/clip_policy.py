@@ -508,6 +508,13 @@ class ResNetCLIPEncoder(nn.Module):
             cnn_input.append(depth_feats)
 
         x = torch.cat(cnn_input, dim=1)
+        print(
+            "CNN ouptut: {}, input: {}, keys: {}".format(
+                [i.shape for i in cnn_input],
+                [i.shape for i in rgb_observations],
+                observations.keys(),
+            )
+        )
 
         return x
 

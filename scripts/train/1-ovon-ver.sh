@@ -2,10 +2,10 @@
 #SBATCH --job-name=ovon
 #SBATCH --output=slurm_logs/ovon-ver-%j.out
 #SBATCH --error=slurm_logs/ovon-ver-%j.err
-#SBATCH --gpus 4
+#SBATCH --gpus 2
 #SBATCH --nodes 1
 #SBATCH --cpus-per-task 10
-#SBATCH --ntasks-per-node 4
+#SBATCH --ntasks-per-node 2
 #SBATCH --constraint=a40
 #SBATCH --partition=short
 #SBATCH --exclude=cheetah,samantha,xaea-12,kitt

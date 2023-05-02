@@ -17,7 +17,7 @@ habitat:
   
   simulator:
     navmesh_settings:
-      agent_max_climb: 0.1
+      agent_max_climb: 0.10
       cell_height: 0.05
 
 habitat_baselines:
