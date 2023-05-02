@@ -13,19 +13,24 @@ from ovon.utils.utils import load_dataset, write_dataset
 
 SCENE_ROOT = "data/scene_datasets/"
 
+
 def validate_episodes(file_path, output_path):
     scene_id = file_path.split("/")[-1]
     output_path = os.path.join(output_path, scene_id)
 
     data = load_dataset(file_path)
-    sim = _config_sim(os.path.join(SCENE_ROOT, data["episodes"][0]["scene_id"]))
+    sim = _config_sim(
+        os.path.join(SCENE_ROOT, data["episodes"][0]["scene_id"])
+    )
     print("Output path: {}".format(output_path))
 
     valid_episodes = []
     for ep in tqdm(data["episodes"]):
         try:
             scene_id = ep["scene_id"]
-            goal_key = "{}_{}".format(scene_id.split("/")[-1], ep["object_category"])
+            goal_key = "{}_{}".format(
+                scene_id.split("/")[-1], ep["object_category"]
+            )
 
             goals = copy.deepcopy(data["goals_by_category"][goal_key])
 
@@ -36,7 +41,7 @@ def validate_episodes(file_path, output_path):
                 goals.extend(data["goals_by_category"][goal_key])
 
             vps = [
-                vp["agent_state"]["position"] 
+                vp["agent_state"]["position"]
                 for g in goals
                 for vp in g["view_points"]
             ]
@@ -45,11 +50,16 @@ def validate_episodes(file_path, output_path):
 
             # point should be not be isolated to a small poly island
             ISLAND_RADIUS_LIMIT = 1.5
-            if sim.pathfinder.island_radius(start_position) < ISLAND_RADIUS_LIMIT:
+            if (
+                sim.pathfinder.island_radius(start_position)
+                < ISLAND_RADIUS_LIMIT
+            ):
                 raise RuntimeError
 
             closest_goals = []
-            geo_dist, closest_point = geodesic_distance(sim, start_position, vps)
+            geo_dist, closest_point = geodesic_distance(
+                sim, start_position, vps
+            )
             closest_goals.append((geo_dist, closest_point))
 
             geo_dists, goals_sorted = zip(
@@ -78,12 +88,17 @@ def validate_episodes(file_path, output_path):
 
             if h_delta > 0.25:
                 raise RuntimeError
-            
+
             valid_episodes.append(ep)
         except Exception as e:
-            print("Error in episode: {} - {} - {}".format(ep["object_category"], ep["children_object_categories"], e))
-        
-    print("Episodes pre and post filtering: {} / {}".format(len(data["episodes"]), len(valid_episodes)))
+            # print("Error in episode: {} - {} - {}".format(ep["object_category"], ep["children_object_categories"], e))
+            pass
+
+    print(
+        "Episodes pre and post filtering: {} / {}".format(
+            len(data["episodes"]), len(valid_episodes)
+        )
+    )
     data["episodes"] = valid_episodes
 
     print("Writing cleaned episodes at: {}".format(output_path))
@@ -114,8 +129,8 @@ def _config_sim(scene: str):
 
     # create agent specifications
     agent_cfg = AgentConfiguration(
-        height=0.88,
-        radius=0.18,
+        height=1.41,
+        radius=0.17,
         sensor_specifications=sensor_specs,
         action_space={
             "look_up": habitat_sim.ActionSpec(
@@ -137,8 +152,8 @@ def _config_sim(scene: str):
     assert sim.pathfinder.is_loaded, "pathfinder is not loaded!"
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()
-    navmesh_settings.agent_height = 0.88
-    navmesh_settings.agent_radius = 0.18
+    navmesh_settings.agent_height = 1.41
+    navmesh_settings.agent_radius = 0.17
     navmesh_settings.agent_max_climb = 0.10
     navmesh_settings.cell_height = 0.05
     navmesh_success = sim.recompute_navmesh(
@@ -162,11 +177,11 @@ def geodesic_distance(sim, position_a, position_b):
     return path.geodesic_distance, end_pt
 
 
-def validate_dataset(path):
+def validate_dataset(path, output_path):
     files = glob.glob(os.path.join(path, "*.json.gz"))
     for file in files:
         print("Validating {}".format(file))
-        validate_episodes(file)
+        validate_episodes(file, output_path)
 
 
 if __name__ == "__main__":
@@ -182,6 +197,6 @@ if __name__ == "__main__":
             print("Validate episodeL: {}".format(args.path))
             validate_episodes(args.path, args.output_path)
         else:
-            validate_dataset(args.path)
+            validate_dataset(args.path, args.output_path)
     except Exception as e:
         print(e)
