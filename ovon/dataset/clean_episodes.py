@@ -16,6 +16,8 @@ SCENE_ROOT = "data/scene_datasets/"
 
 def validate_episodes(file_path, output_path):
     scene_id = file_path.split("/")[-1]
+    os.makedirs(output_path, exist_ok=True)
+
     output_path = os.path.join(output_path, scene_id)
 
     data = load_dataset(file_path)
@@ -89,6 +91,8 @@ def validate_episodes(file_path, output_path):
             if h_delta > 0.25:
                 raise RuntimeError
 
+            ep["info"]["geodesic_distance"] = geo_dist
+            ep["info"]["euclidean_distance"] = np.linalg.norm(start_position - closest_pt)
             valid_episodes.append(ep)
         except Exception as e:
             # print("Error in episode: {} - {} - {}".format(ep["object_category"], ep["children_object_categories"], e))

@@ -152,3 +152,4 @@ def count_episodes(path):
     print("Total episodes: {}".format(count))
     print("Categories: {}".format(categories))
     print("Total categories: {}".format(len(categories)))
+    return count, categories

@@ -98,14 +98,13 @@ class PoseSampler:
 
         floor_height = self._get_floor_height(search_center)
         search_center = np.array([search_center[0], floor_height, search_center[2]])
-        x_len, _, z_len = obj.aabb.sizes / 2.0
 
         poses: List[AgentState] = []
 
         for i in range(
             1 + int(np.floor((self.radius_max - self.radius_min) / self.radius_step))
         ):
-            r = self.radius_min + i * self.radius_step #+ max(x_len, z_len)
+            r = self.radius_min + i * self.radius_step
             for j in range(1 + int(np.floor(360 / self.rot_deg_delta))):
                 theta = np.deg2rad(j * self.rot_deg_delta)
                 x_diff = r * np.cos(theta)
@@ -139,7 +138,7 @@ class PoseSampler:
                         np.deg2rad(deg), habitat_sim.geo.GRAVITY
                     )
 
-                poses.append((AgentState(position=pos, rotation=rot), r - max(x_len, z_len)))
+                poses.append(AgentState(position=pos, rotation=rot))
 
         return poses
 

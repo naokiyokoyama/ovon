@@ -8,6 +8,8 @@ from typing import Dict, Iterable, List, Optional, Set
 
 import numpy as np
 
+from ovon.utils.utils import load_json
+
 
 class Relationship:
     scene: str
