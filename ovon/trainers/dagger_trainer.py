@@ -253,7 +253,7 @@ class VERDAggerTrainer(VERTrainer):
             self.agent.optimizer.load_state_dict(resume_state["optim_state"])
 
         rollouts_obs_space = copy.deepcopy(self.obs_space)
-        if self._static_encoder:
+        if self._static_encoder and hasattr(self.actor_critic, "net"):
             self._encoder = self.actor_critic.net.visual_encoder
             rollouts_obs_space = spaces.Dict(
                 {
@@ -459,7 +459,10 @@ class VERDAggerTrainer(VERTrainer):
                 }
             )
 
-        if not self.config.habitat_baselines.rl.ddppo.train_encoder:
+        if (
+            not self.config.habitat_baselines.rl.ddppo.train_encoder
+            and hasattr(self.actor_critic, "net")
+        ):
             self._static_encoder = True
             for param in self.actor_critic.net.visual_encoder.parameters():
                 param.requires_grad_(False)

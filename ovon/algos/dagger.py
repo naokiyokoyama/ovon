@@ -69,7 +69,8 @@ class DAgger(PPO):
 
         self.inflection_weight = 2.11
 
-        self.device = next(actor_critic.parameters()).device
+        if hasattr(self.actor_critic, "net"):
+            self.device = next(actor_critic.parameters()).device
 
         if (
             use_adaptive_entropy_pen
@@ -260,6 +261,11 @@ class DAggerPolicyMixin:
         deterministic=False,
     ):
         """Skips computing values and action_log_probs, which are RL-only."""
+        if not hasattr(self, "action_distribution"):
+            return super().act(
+                observations, rnn_hidden_states, prev_actions, masks
+            )
+
         features, rnn_hidden_states, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks
         )
