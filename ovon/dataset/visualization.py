@@ -10,11 +10,12 @@ from habitat_sim.agent.agent import AgentState
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import d3_40_colors_rgb
 from numpy import ndarray
-from ovon.dataset.pose_sampler import PoseSampler
 from PIL import Image
 from torchvision.ops import masks_to_boxes
 from torchvision.transforms import PILToTensor
 from torchvision.utils import draw_bounding_boxes
+
+from ovon.dataset.pose_sampler import PoseSampler
 
 IMAGE_DIR = "data/images/ovon_dataset_gen/debug"
 MAX_DIST = [0, 0, 200]  # Blue
@@ -42,25 +43,24 @@ color2RGB = {
     "Navy": (0, 0, 128),
 }
 
-def get_depth(obs, objects):
+def get_depth(depth_obs, semantic_obs, objects):
     obj_depths = []
     for obj in objects:
         id = obj.semantic_id
-        depth = np.mean(obs["depth"][obs["semantic"] == id])
+        depth = np.mean(depth_obs[semantic_obs == id])
         obj_depths.append("{:.2f}".format(depth))
         
     return obj_depths
 
-def get_color(obs, objects):
+def get_color(rgb_obs, semantic_obs, objects):
     """
     Returns color name or None if object does not have specific color
     """
-    rgb_key = "color" if "color" in obs.keys() else "rgb"
     colors = np.array(list(color2RGB.values()))
     obj_colors = []
     for obj in objects:
         id = obj.semantic_id
-        rgb = obs[rgb_key][obs["semantic"] == id][:, :3]
+        rgb = rgb_obs[semantic_obs == id][:, :3]
         color_ids = np.argmin(
             np.linalg.norm(rgb[:, np.newaxis, :] - colors, axis=2),
             axis=1,
@@ -120,13 +120,13 @@ def get_bounding_box(
     """Return the image with bounding boxes drawn on objects inside objectList"""
     N, H, W = (
         len(objectList),
-        obs["semantic"].shape[0],
-        obs["semantic"].shape[1],
+        obs["semantic_sensor"].shape[0],
+        obs["semantic_sensor"].shape[1],
     )
     masks = np.zeros((N, H, W))
-    for i, object in enumerate(objectList):
+    for i, obj in enumerate(objectList):
         masks[i] = (
-            obs["semantic"] == np.array([[(object.semantic_id)]])
+            obs["semantic_sensor"] == np.array([[(obj.semantic_id)]])
         ).reshape((1, H, W))
 
     boxes = masks_to_boxes(torch.from_numpy(masks))
@@ -137,7 +137,7 @@ def get_bounding_box(
             / (H * W)
         )
     rgb_key = "color" if "color" in obs.keys() else "rgb"
-    img = Image.fromarray(obs[rgb_key][:, :, :3], "RGB")
+    img = Image.fromarray(obs["color_sensor"][:, :, :3], "RGB")
     if depths is None:
         labels = [f"{obj.category.name()}_{obj.semantic_id}" for i,obj in enumerate(objectList)]
     else:
@@ -180,7 +180,7 @@ def get_best_viewpoint_with_posesampler(
     )
     candidate_states = pose_sampler.sample_agent_poses_radially(search_center)
     candidate_poses_ious = list(
-        _get_iou_pose(sim, pos, objectList) for pos, _ in candidate_states
+        _get_iou_pose(sim, pos, objectList) for pos in candidate_states
     )
     candidate_poses_ious_filtered = [
         p for p in candidate_poses_ious if (p[0] is not None)
@@ -192,3 +192,14 @@ def get_best_viewpoint_with_posesampler(
         return True, candidate_poses_sorted[0]
     else:
         return False, None
+
+def objects_in_view(obs, target_obj, threshold=0.01):
+    area = np.prod(obs.shape)
+    obj_ids, num_pixels = np.unique(obs, return_counts=True)
+    objects = [
+        obj_ids[i]
+        for i in range(len(num_pixels))
+        if num_pixels[i] / (area) > threshold and obj_ids[i] != target_obj
+    ]
+    return objects
+

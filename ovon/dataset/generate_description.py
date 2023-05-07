@@ -1,14 +1,15 @@
-import openai
+import os
 import pickle
-import numpy as np
+import random
+import time
+from copy import deepcopy
 from math import ceil
 from typing import List
-from tqdm import tqdm
-import random
-from copy import deepcopy
-import time
-import transformers
 
+import numpy as np
+import openai
+import transformers
+from tqdm import tqdm
 
 PROMPT_2D = """
 {}
@@ -162,6 +163,7 @@ def generate_description_for_scene(meta_file_path, openai = True):
         for d in drop_rate:
             temp_obj_dict = deepcopy(obj_dict)
             prompt = prompt_for_obj(temp_obj_dict, drop = d)
+            print(prompt)
             if openai:
                 response = gpt_call(prompt=prompt)
                 if response is None:
@@ -173,22 +175,15 @@ def generate_description_for_scene(meta_file_path, openai = True):
                         "content"
                     ]
             else:
-                inputs = alpaca_tokenizer(prompt, return_tensors="pt")
-                out = alpaca_model.generate(inputs=inputs.input_ids, max_new_tokens=100)
-                output_text = alpaca_tokenizer.batch_decode(out, skip_special_tokens=True)[0]
-                output_text = output_text[len(inputs) :]
-                obj_dict[f"Instruction_{1-d}"] = output_text
-                print(output_text)
+                raise NotImplementedError
         time.sleep(61)
+        break
     print(f"API call failed for {cnt} out of {len(object_dict_list)} objects!")
     return current_list
 
 
 if __name__ == "__main__":
-    openai.api_key = "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"
-    #alpaca_model = transformers.AutoModelForCausalLM.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
-    #alpaca_tokenizer = transformers.AutoTokenizer.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
-    #print("Model has been loaded")
+    openai.api_key = os.environ.get("OPENAI_APIKEY", "")
     scenes_1 = ['vLpv2VX547B']
     scenes_5 = [
         "U3oQjwTuMX8",
@@ -198,14 +193,14 @@ if __name__ == "__main__":
         "JptJPosx1Z6",
     ]
     for scene in scenes_1:
-        object_view_meta_file = "/nethome/akutumbaka3/files/ovonproject/data/object_views/train/meta/{}.pkl".format(
+        object_view_meta_file = "/srv/flash1/akutumbaka3/ovonproject/data/object_views/train/meta/{}.pkl".format(
             scene
         )
         final_list = generate_description_for_scene(object_view_meta_file)
-        webpage_path = f"/nethome/akutumbaka3/files/ovonproject/data/object_views/train/webpage/{scene}.html"
+        webpage_path = f"/srv/flash1/akutumbaka3/ovonproject/data/object_views/train/webpage/{scene}.html"
         create_html(file_name=webpage_path, objects=final_list)
         with open(
-            f"/nethome/akutumbaka3/files/ovonproject/data/object_views/train/annotated/{scene}.pkl",
+            f"/srv/flash1/akutumbaka3/ovonproject/data/object_views/train/annotated/{scene}.pkl",
             "wb",
         ) as f:
             pickle.dump(final_list, f)

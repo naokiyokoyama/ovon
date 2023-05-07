@@ -1,37 +1,33 @@
 import argparse
 import json
+import multiprocessing
 import os
 import os.path as osp
 import pickle
 from typing import Dict, List, Union
-import multiprocessing
-import openai
 
 import GPUtil
 import habitat
 import habitat_sim
 import numpy as np
+import openai
 from habitat.config.default import get_agent_config, get_config
-from habitat.config.default_structured_configs import (
-    HabitatSimSemanticSensorConfig,
-)
+from habitat.config.default_structured_configs import \
+    HabitatSimSemanticSensorConfig
 from habitat.config.read_write import read_write
 from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
 from habitat_sim.agent.agent import Agent, AgentState
 from habitat_sim.simulator import Simulator
-from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (
-    get_hm3d_semantic_scenes,
-    ObjectCategoryMapping,
-)
-from ovon.dataset.generate_viewpoints import config_sim
-from ovon.dataset.visualization import (
-    get_best_viewpoint_with_posesampler,
-    get_bounding_box,
-    get_color, get_depth
-)
 from torchvision.transforms import ToPILImage
 from tqdm import tqdm
+
+from ovon.dataset.generate_viewpoints import config_sim
+from ovon.dataset.pose_sampler import PoseSampler
+from ovon.dataset.semantic_utils import (ObjectCategoryMapping,
+                                         get_hm3d_semantic_scenes)
+from ovon.dataset.visualization import (get_best_viewpoint_with_posesampler,
+                                        get_bounding_box, get_color, get_depth,
+                                        objects_in_view)
 
 SCENES_ROOT = "data/scene_datasets/hm3d"
 NUM_GPUS = len(GPUtil.getAvailable(limit=256))
@@ -171,8 +167,8 @@ def get_objnav_config(i: int, scene: str):
 
         for sensor, sensor_config in agent_config.sim_sensors.items():
             agent_config.sim_sensors[sensor].hfov = FOV
-            agent_config.sim_sensors[sensor].width //= 2
-            agent_config.sim_sensors[sensor].height //= 2
+            # agent_config.sim_sensors[sensor].width //= 2
+            # agent_config.sim_sensors[sensor].height //= 2
             agent_config.sim_sensors[sensor].position = sensor_pos
 
         objnav_config.habitat.task.measurements = {}
@@ -195,9 +191,7 @@ def get_objnav_config(i: int, scene: str):
 
 
 def get_simulator(objnav_config) -> Simulator:
-    sim = habitat.sims.make_sim(
-        "Sim-v0", config=objnav_config.habitat.simulator
-    )
+    sim = habitat.sims.make_sim("Sim-v0", config=objnav_config.habitat.simulator)
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()
     navmesh_settings.agent_radius = (
@@ -223,18 +217,6 @@ def is_on_ceiling(sim: Simulator, aabb: BBox):
     if snapped[1] < point[1] - 1.5:
         return True
     return False
-
-
-def get_all_objects_in_view(obs, target_obj, threshold=0.01):
-    area = np.prod(obs["semantic"].shape)
-    obj_ids, num_pixels = np.unique(obs["semantic"], return_counts=True)
-    objects = [
-        obj_ids[i]
-        for i in range(len(num_pixels))
-        if num_pixels[i] / (area) > threshold and obj_ids[i] != target_obj
-    ]
-    return objects
-
 
 def get_objects_for_scene(args) -> None:
     scene, outpath, device_id = args
@@ -265,7 +247,6 @@ def get_objects_for_scene(args) -> None:
     )
 
     split = outpath.split("/")[-2]
-    print(split)
     objects_visualized = []
     cnt = 0
     agent = sim.get_agent(0)
@@ -278,12 +259,11 @@ def get_objects_for_scene(args) -> None:
     )
 
     os.makedirs(os.path.join(outpath, f"images/{scene_key}"), exist_ok=True)
+    os.makedirs(os.path.join(outpath, f"images_annotated/{scene_key}"), exist_ok=True)
 
     object_view_data = []
     objects_info = list(
-        filter(
-            lambda obj: cat_map[obj.category.name()] is not None, objects_info
-        )
+        filter(lambda obj: cat_map[obj.category.name()] is not None, objects_info)
     )
 
     for object in objects_info:
@@ -291,18 +271,14 @@ def get_objects_for_scene(args) -> None:
         if is_on_ceiling(sim, object.aabb):
             continue
 
-        check, view = get_best_viewpoint_with_posesampler(
-            sim, pose_sampler, [object]
-        )
+        check, view = get_best_viewpoint_with_posesampler(sim, pose_sampler, [object])
         if check:
             cov, pose, _ = view
             if cov < 0.05:
                 continue
             agent.set_state(pose)
             obs = sim.get_sensor_observations()
-            object_ids_in_view = get_all_objects_in_view(
-                obs, object.semantic_id
-            )
+            object_ids_in_view = objects_in_view(obs, object.semantic_id)
             objects_in_view = list(
                 filter(
                     lambda obj: obj is not None
@@ -316,15 +292,20 @@ def get_objects_for_scene(args) -> None:
             colors = get_color(obs, [object] + objects_in_view)
             depths = get_depth(obs, [object] + objects_in_view)
             drawn_img, bbs, area_covered = get_bounding_box(
-                obs, [object] + objects_in_view, depths = depths
+                obs, [object] + objects_in_view, depths=depths
             )
             if np.sum(area_covered) > 0:
                 # Save information of this object and all objects on top
                 path = os.path.join(
                     outpath,
-                    f"images/{scene_key}/{name}_{object.semantic_id}.png",
+                    f"images_annotated/{scene_key}/{name}_{object.semantic_id}.png",
                 )
                 save_img(drawn_img, path)
+                path = os.path.join(
+                    outpath,
+                    f"images/{scene_key}/{name}_{object.semantic_id}.png",
+                )
+                save_img(obs["rgb"], path)
                 view_info = {
                     "target_obj_id": object.semantic_id,
                     "target_obj_name": object.category.name(),
@@ -365,23 +346,17 @@ def get_objects_for_split(
     multiprocessing_enabled: bool = False,
 ):
     """Makes episodes for all scenes in a split"""
-    
+
     scenes = sorted(
-        list(
-            get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[
-                split
-            ]
-        )
+        list(get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split])
     )
     num_scenes = len(scenes) if num_scenes is None else num_scenes
+    scenes = [s for s in scenes if "vLpv2VX547B" in s]
     scenes = scenes[:num_scenes]
 
-    scenes =['vLpv2VX547B']
     print(scenes)
     print(
-        "Starting visualisation for split {} with {} scenes".format(
-            split, len(scenes)
-        )
+        "Starting visualisation for split {} with {} scenes".format(split, len(scenes))
     )
 
     os.makedirs(os.path.join(outpath.format(split), "meta"), exist_ok=True)
@@ -392,11 +367,7 @@ def get_objects_for_split(
         deviceIds = GPUtil.getAvailable(
             order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
         )
-        print(
-            "In multiprocessing setup - cpu {}, GPU: {}".format(
-                cpu_threads, gpus
-            )
-        )
+        print("In multiprocessing setup - cpu {}, GPU: {}".format(cpu_threads, gpus))
 
         items = []
         for i, s in enumerate(scenes):
@@ -439,9 +410,7 @@ if __name__ == "__main__":
         help="number of scenes",
         type=int,
     )
-    parser.add_argument(
-        "--tasks_per_gpu", help="number of scenes", type=int, default=1
-    )
+    parser.add_argument("--tasks_per_gpu", help="number of scenes", type=int, default=1)
     parser.add_argument(
         "-m",
         "--multiprocessing_enabled",
