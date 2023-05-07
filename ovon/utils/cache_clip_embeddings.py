@@ -50,19 +50,26 @@ def load_categories_from_dataset(path):
 
 def main(dataset_path, output_path):
     goal_categories = load_categories_from_dataset(dataset_path)
-    val_goal_categories = load_categories_from_dataset(
-        dataset_path.replace("train", "val")
+    val_seen_categories = load_categories_from_dataset(
+        dataset_path.replace("train", "val_seen")
     )
-    goal_categories.extend(val_goal_categories)
-
-    unseen_categories = set(val_goal_categories) - set(goal_categories)
+    val_unseen_easy_categories = load_categories_from_dataset(
+        dataset_path.replace("train", "val_unseen_easy")
+    )
+    val_unseen_hard_categories = load_categories_from_dataset(
+        dataset_path.replace("train", "val_unseen_hard")
+    )
+    goal_categories.extend(val_seen_categories)
+    goal_categories.extend(val_unseen_easy_categories)
+    goal_categories.extend(val_unseen_hard_categories)
 
     print("Total goal categories: {}".format(len(goal_categories)))
     print(
-        "Train categories: {}, Val categories: {}, Unseen Val categories: {}".format(
+        "Train categories: {}, Val seen categories: {}, Val unseen easy categories: {}, Val unseen hard categories: {}".format(
             len(goal_categories),
-            len(val_goal_categories),
-            len(unseen_categories),
+            len(val_seen_categories),
+            len(val_unseen_easy_categories),
+            len(val_unseen_hard_categories),
         )
     )
     cache_embeddings(goal_categories, output_path)

@@ -25,9 +25,9 @@ conda activate ovon
 
 export PYTHONPATH=/srv/flash1/rramrakhya6/spring_2023/habitat-sim/src_python/
 
-TENSORBOARD_DIR="tb/ovon/ddppo/resnetclip_rgb_text_linear/seed_3/"
-CHECKPOINT_DIR="data/new_checkpoints/ovon/ddppo/resnetclip_rgb_text_linear/seed_3/"
-DATA_PATH="data/datasets/ovon/hm3d/v3"
+TENSORBOARD_DIR="tb/ovon/ver/resnetclip_rgb_text/seed_2/"
+CHECKPOINT_DIR="data/new_checkpoints/ovon/ver/resnetclip_rgb_text/seed_2/"
+DATA_PATH="data/datasets/ovon/hm3d/v2"
 
 srun python -um ovon.run \
   --run-type train \
@@ -42,8 +42,7 @@ srun python -um ovon.run \
   habitat.dataset.data_path=${DATA_PATH}/train/train.json.gz \
   +habitat/task/lab_sensors@habitat.task.lab_sensors.clip_objectgoal_sensor=clip_objectgoal_sensor \
   ~habitat.task.lab_sensors.objectgoal_sensor \
-  habitat.task.lab_sensors.clip_objectgoal_sensor.cache=data/clip_embeddings/ovon_hm3d_cache.pkl \
-  habitat_baselines.rl.policy.add_clip_linear_projection=True \
+  habitat.task.lab_sensors.clip_objectgoal_sensor.cache=data/clip_embeddings/ovon_stretch_final_cache.pkl \
   habitat.task.measurements.success.success_distance=0.25 \
   habitat.dataset.type="OVON-v1" \
   habitat.task.measurements.distance_to_goal.type=OVONDistanceToGoal \

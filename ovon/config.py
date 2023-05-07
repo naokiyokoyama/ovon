@@ -85,6 +85,7 @@ class OVONPolicyConfig(PolicyConfig):
     clip_model: str = "RN50"
     add_clip_linear_projection: bool = False
     depth_ckpt: str = ""
+    late_fusion: bool = False
 
 
 @dataclass

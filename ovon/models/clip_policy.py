@@ -12,9 +12,7 @@ from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
 from habitat_baselines.rl.ddppo.policy.resnet import resnet18
 from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
-from habitat_baselines.rl.models.rnn_state_encoder import (
-    build_rnn_state_encoder,
-)
+from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
@@ -41,15 +39,12 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         aux_loss_config: Optional["DictConfig"] = None,
         add_clip_linear_projection: bool = False,
         depth_ckpt: str = "",
+        late_fusion: bool = False,
         **kwargs,
     ):
         if policy_config is not None:
-            discrete_actions = (
-                policy_config.action_distribution_type == "categorical"
-            )
-            self.action_distribution_type = (
-                policy_config.action_distribution_type
-            )
+            discrete_actions = policy_config.action_distribution_type == "categorical"
+            self.action_distribution_type = policy_config.action_distribution_type
         else:
             discrete_actions = True
             self.action_distribution_type = "categorical"
@@ -65,6 +60,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 discrete_actions=discrete_actions,
                 add_clip_linear_projection=add_clip_linear_projection,
                 depth_ckpt=depth_ckpt,
+                late_fusion=late_fusion,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -89,11 +85,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             )
         filtered_obs = spaces.Dict(
             OrderedDict(
-                (
-                    (k, v)
-                    for k, v in observation_space.items()
-                    if k not in ignore_names
-                )
+                ((k, v) for k, v in observation_space.items() if k not in ignore_names)
             )
         )
         try:
@@ -104,6 +96,10 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             depth_ckpt = config.habitat_baselines.rl.policy.depth_ckpt
         except:
             depth_ckpt = ""
+        try:
+            late_fusion = config.habitat_baselines.rl.policy.late_fusion
+        except:
+            late_fusion = False
         return cls(
             observation_space=filtered_obs,
             action_space=action_space,
@@ -115,6 +111,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             aux_loss_config=config.habitat_baselines.rl.auxiliary_losses,
             add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
             depth_ckpt=depth_ckpt,
+            late_fusion=late_fusion,
         )
 
 
@@ -131,11 +128,13 @@ class PointNavResNetCLIPNet(Net):
         clip_model: str = "RN50",
         depth_ckpt: str = "",
         add_clip_linear_projection: bool = False,
+        late_fusion: bool = False,
     ):
         super().__init__()
         self.prev_action_embedding: nn.Module
         self.discrete_actions = discrete_actions
         self.add_clip_linear_projection = add_clip_linear_projection
+        self.late_fusion = late_fusion
         self._n_prev_action = 32
         if discrete_actions:
             self.prev_action_embedding = nn.Embedding(
@@ -143,9 +142,7 @@ class PointNavResNetCLIPNet(Net):
             )
         else:
             num_actions = get_num_actions(action_space)
-            self.prev_action_embedding = nn.Linear(
-                num_actions, self._n_prev_action
-            )
+            self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
         rnn_input_size = self._n_prev_action  # test
         rnn_input_size_info = {"prev_action": self._n_prev_action}
 
@@ -170,14 +167,9 @@ class PointNavResNetCLIPNet(Net):
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
-                int(
-                    observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
-                )
-                + 1
+                int(observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]) + 1
             )
-            self.obj_categories_embedding = nn.Embedding(
-                self._n_object_categories, 32
-            )
+            self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
             rnn_input_size += 32
             rnn_input_size_info["object_goal"] = 32
 
@@ -195,23 +187,22 @@ class PointNavResNetCLIPNet(Net):
                 object_goal_size = 256
             else:
                 object_goal_size = clip_embedding
-            rnn_input_size += object_goal_size
-            rnn_input_size_info["clip_goal"] = object_goal_size
+
+            if not late_fusion:
+                rnn_input_size += object_goal_size
+                rnn_input_size_info["clip_goal"] = object_goal_size
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
-            input_gps_dim = observation_space.spaces[
-                EpisodicGPSSensor.cls_uuid
-            ].shape[0]
+            input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
+                0
+            ]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
             rnn_input_size_info["gps_embedding"] = 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
-                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
-                    0
-                ]
-                == 1
+                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[0] == 1
             ), "Expected compass with 2D rotation."
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
@@ -271,13 +262,13 @@ class PointNavResNetCLIPNet(Net):
         x = []
         aux_loss_state = {}
         clip_image_goal = None
+        object_goal = None
         if not self.is_blind:
             # We CANNOT use observations.get() here because
             # self.visual_encoder(observations) is an expensive operation. Therefore,
             # we need `# noqa: SIM401`
             if (  # noqa: SIM401
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
-                in observations
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
             ):
                 visual_feats = observations[
                     PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
@@ -298,18 +289,16 @@ class PointNavResNetCLIPNet(Net):
             object_goal = observations[ObjectGoalSensor.cls_uuid].long()
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
-        if ClipObjectGoalSensor.cls_uuid in observations:
+        if ClipObjectGoalSensor.cls_uuid in observations and not self.late_fusion:
             object_goal = observations[ClipObjectGoalSensor.cls_uuid]
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
             x.append(object_goal)
 
-        if ClipImageGoalSensor.cls_uuid in observations:
+        if ClipImageGoalSensor.cls_uuid in observations and not self.late_fusion:
             assert clip_image_goal is not None
             if self.add_clip_linear_projection:
-                clip_image_goal = self.obj_categories_embedding(
-                    clip_image_goal
-                )
+                clip_image_goal = self.obj_categories_embedding(clip_image_goal)
             x.append(clip_image_goal)
 
         if ClipGoalSelectorSensor.cls_uuid in observations:
@@ -335,14 +324,10 @@ class PointNavResNetCLIPNet(Net):
                 ],
                 -1,
             )
-            x.append(
-                self.compass_embedding(compass_observations.squeeze(dim=1))
-            )
+            x.append(self.compass_embedding(compass_observations.squeeze(dim=1)))
 
         if EpisodicGPSSensor.cls_uuid in observations:
-            x.append(
-                self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
-            )
+            x.append(self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid]))
 
         prev_actions = prev_actions.squeeze(-1)
         start_token = torch.zeros_like(prev_actions)
@@ -358,6 +343,10 @@ class PointNavResNetCLIPNet(Net):
             out, rnn_hidden_states, masks, rnn_build_seq_info
         )
         aux_loss_state["rnn_output"] = out
+
+        if self.late_fusion:
+            object_goal = observations[ClipObjectGoalSensor.cls_uuid]
+            out = (out + visual_feats) * object_goal
 
         return out, rnn_hidden_states, aux_loss_state
 
