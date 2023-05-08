@@ -62,6 +62,12 @@ class ImageNavRewardMeasurementConfig(MeasurementConfig):
 
 
 @dataclass
+class OVONObjectGoalIDMeasurementConfig(MeasurementConfig):
+    type: str = "OVONObjectGoalID"
+    cache: str = "data/clip_embeddings/ovon_stretch_final_cache.pkl"
+
+
+@dataclass
 class OVONPolicyConfig(PolicyConfig):
     name: str = "OVONPolicy"
     backbone: str = "resnet50"
@@ -165,6 +171,13 @@ cs.store(
     group="habitat/task/measurements",
     name="imagenav_reward",
     node=ImageNavRewardMeasurementConfig,
+)
+
+cs.store(
+    package="habitat.task.measurements.ovon_object_goal_id",
+    group="habitat/task/measurements",
+    name="ovon_object_goal_id",
+    node=OVONObjectGoalIDMeasurementConfig,
 )
 
 cs.store(

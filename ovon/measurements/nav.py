@@ -7,6 +7,8 @@ from habitat.core.registry import registry
 from habitat.core.simulator import Simulator
 from habitat.tasks.nav.nav import NavigationEpisode, NavigationTask
 
+from ovon.utils.utils import load_pickle
+
 if TYPE_CHECKING:
     from omegaconf import DictConfig
 
@@ -100,3 +102,28 @@ class OVONDistanceToGoal(Measure):
                 current_position[2],
             )
             self._metric = distance_to_target
+
+
+@registry.register_measure
+class OVONObjectGoalID(Measure):
+    cls_uuid: str = "object_goal_id"
+
+    def __init__(self, config: "DictConfig", *args: Any, **kwargs: Any):
+        cache = load_pickle(config.cache)
+        self.vocab = sorted(list(cache.keys()))
+        super().__init__(**kwargs)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
+        self._metric = self.vocab.index(episode.object_category)
+
+    def update_metric(
+        self,
+        episode: NavigationEpisode,
+        task: NavigationTask,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        pass
