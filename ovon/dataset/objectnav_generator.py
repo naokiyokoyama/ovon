@@ -125,6 +125,7 @@ class ObjectGoalGenerator:
         sim_cfg.gpu_device_id = self.device_id
         sim_cfg.scene_dataset_config_file = self.semantic_spec_filepath
         sim_cfg.scene_id = scene
+        sim_cfg.allow_sliding = False
 
         sensor_specs = []
         for name, sensor_type in zip(
