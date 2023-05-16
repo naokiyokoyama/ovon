@@ -68,6 +68,16 @@ class OVONObjectGoalIDMeasurementConfig(MeasurementConfig):
 
 
 @dataclass
+class PolicyFinetuneConfig:
+    enabled: bool = False
+    lr: float = 1.5e-5
+    start_actor_warmup_at: int = 50
+    start_actor_update_at: int = 100
+    start_critic_warmup_at: int = 20
+    start_critic_update_at: int = 80
+
+
+@dataclass
 class OVONPolicyConfig(PolicyConfig):
     name: str = "OVONPolicy"
     backbone: str = "resnet50"
@@ -86,6 +96,8 @@ class OVONPolicyConfig(PolicyConfig):
     add_clip_linear_projection: bool = False
     depth_ckpt: str = ""
     late_fusion: bool = False
+
+    finetune: PolicyFinetuneConfig = PolicyFinetuneConfig()
 
 
 @dataclass

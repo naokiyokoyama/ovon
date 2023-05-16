@@ -12,17 +12,15 @@ from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
 from habitat_baselines.rl.ddppo.policy.resnet import resnet18
 from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
-from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import \
+    build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
 from torchvision import transforms as T
 
-from ovon.task.sensors import (
-    ClipGoalSelectorSensor,
-    ClipImageGoalSensor,
-    ClipObjectGoalSensor,
-)
+from ovon.task.sensors import (ClipGoalSelectorSensor, ClipImageGoalSensor,
+                               ClipObjectGoalSensor)
 
 
 @baseline_registry.register_policy
@@ -113,6 +111,34 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             depth_ckpt=depth_ckpt,
             late_fusion=late_fusion,
         )
+
+    def freeze_visual_encoders(self):
+        for param in self.net.visual_encoder.parameters():
+            param.requires_grad_(False)
+        for param in self.net.visual_fc.parameters():
+            param.requires_grad_(False)
+
+    def unfreeze_visual_encoders(self):
+        for param in self.net.visual_encoder.parameters():
+            param.requires_grad_(True)
+        for param in self.net.visual_fc.parameters():
+            param.requires_grad_(True)
+
+    def freeze_state_encoder(self):
+        for param in self.net.state_encoder.parameters():
+            param.requires_grad_(False)
+
+    def unfreeze_state_encoder(self):
+        for param in self.net.state_encoder.parameters():
+            param.requires_grad_(True)
+
+    def freeze_actor(self):
+        for param in self.action_distribution.parameters():
+            param.requires_grad_(False)
+
+    def unfreeze_actor(self):
+        for param in self.action_distribution.parameters():
+            param.requires_grad_(True)
 
 
 class PointNavResNetCLIPNet(Net):
