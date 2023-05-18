@@ -1,10 +1,8 @@
 from dataclasses import dataclass
 
-from habitat.config.default_structured_configs import (EnvironmentConfig,
-                                                       HabitatConfig,
-                                                       LabSensorConfig,
-                                                       MeasurementConfig,
-                                                       SimulatorConfig)
+from habitat.config.default_structured_configs import (
+    CollisionsMeasurementConfig, EnvironmentConfig, HabitatConfig,
+    LabSensorConfig, MeasurementConfig, SimulatorConfig)
 from habitat_baselines.config.default_structured_configs import (
     HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
 from hydra.core.config_search_path import ConfigSearchPath
@@ -71,10 +69,10 @@ class OVONObjectGoalIDMeasurementConfig(MeasurementConfig):
 class PolicyFinetuneConfig:
     enabled: bool = False
     lr: float = 1.5e-5
-    start_actor_warmup_at: int = 50
-    start_actor_update_at: int = 100
-    start_critic_warmup_at: int = 20
-    start_critic_update_at: int = 80
+    start_actor_warmup_at: int = 750
+    start_actor_update_at: int = 1500
+    start_critic_warmup_at: int = 500
+    start_critic_update_at: int = 1000
 
 
 @dataclass
@@ -191,6 +189,13 @@ cs.store(
     group="habitat/task/measurements",
     name="ovon_object_goal_id",
     node=OVONObjectGoalIDMeasurementConfig,
+)
+
+cs.store(
+    package="habitat.task.measurements.collisions",
+    group="habitat/task/measurements",
+    name="collisions",
+    node=CollisionsMeasurementConfig,
 )
 
 cs.store(
