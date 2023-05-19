@@ -22,6 +22,10 @@ from ovon.models.transforms import get_transform
 from ovon.task.sensors import ClipImageGoalSensor, ClipObjectGoalSensor
 from ovon.utils.utils import load_encoder
 
+from ovon.models.encoders.visual_encoder_v2 import (
+    VisualEncoder as VisualEncoderV2,
+)
+
 
 class OVRLPolicyNet(Net):
     r"""A baseline sequence to sequence network that concatenates instruction,
@@ -87,17 +91,25 @@ class OVRLPolicyNet(Net):
             randomize_augmentations_over_envs
         )
 
-        self.visual_encoder = VisualEncoder(
-            image_size=rgb_image_size,
-            backbone=backbone,
-            input_channels=3,
-            resnet_baseplanes=resnet_baseplanes,
-            resnet_ngroups=resnet_baseplanes // 2,
-            avgpooled_image=avgpooled_image,
-            drop_path_rate=drop_path_rate,
-            visual_transform=self.visual_transform,
-            num_environments=num_environments,
-        )
+        if backbone == "ovrl_v2":
+            self.visual_encoder = VisualEncoderV2(
+                image_size=rgb_image_size,
+                backbone="vit_base_path16",
+                visual_transform=self.visual_transform,
+                checkpoint="data/visual_encoders/ovrl-v2_MAE_base.pth",
+            )
+        else:
+            self.visual_encoder = VisualEncoder(
+                image_size=rgb_image_size,
+                backbone=backbone,
+                input_channels=3,
+                resnet_baseplanes=resnet_baseplanes,
+                resnet_ngroups=resnet_baseplanes // 2,
+                avgpooled_image=avgpooled_image,
+                drop_path_rate=drop_path_rate,
+                visual_transform=self.visual_transform,
+                num_environments=num_environments,
+            )
 
         self.visual_fc = nn.Sequential(
             nn.Flatten(),
@@ -109,7 +121,7 @@ class OVRLPolicyNet(Net):
         )
 
         # pretrained weights
-        if pretrained_encoder is not None:
+        if pretrained_encoder is not None and backbone != "ovrl_v2":
             msg = load_encoder(self.visual_encoder, pretrained_encoder)
             logger.info(
                 "Using weights from {}: {}".format(pretrained_encoder, msg)
@@ -184,7 +196,7 @@ class OVRLPolicyNet(Net):
 
     @property
     def is_blind(self):
-        return self.visual_encoder.is_blind
+        return False
 
     @property
     def num_recurrent_layers(self):
@@ -423,6 +435,10 @@ class ResNetCLIPGoalEncoder(nn.Module):
             observation_space.spaces["rgb"].shape[0] != 224
             or observation_space.spaces["rgb"].shape[1] != 224
         ):
+            print(
+                "Current 'rgb' observation shape:",
+                observation_space.spaces["rgb"].shape,
+            )
             print("Using CLIPGoal preprocess for resizing+cropping to 224x224")
             preprocess_transforms = [
                 # resize and center crop to 224

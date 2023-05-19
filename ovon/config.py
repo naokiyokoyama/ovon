@@ -107,7 +107,7 @@ class OVONPolicyConfig(PolicyConfig):
     augmentations_name: str = "jitter+shift"
     use_augmentations_test_time: bool = True
     randomize_augmentations_over_envs: bool = False
-    rgb_image_size: int = 256
+    rgb_image_size: int = 224
     resnet_baseplanes: int = 32
     avgpooled_image: bool = False
     drop_path_rate: float = 0.0

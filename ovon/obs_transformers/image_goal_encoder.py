@@ -34,7 +34,7 @@ class CLIPImageGoalEncoder(ObservationTransformer):
                 "rgb": spaces.Box(
                     low=np.finfo(np.float32).min,
                     high=np.finfo(np.float32).max,
-                    shape=(1,),
+                    shape=(224, 224, 3),
                     dtype=np.float32,
                 ),
                 ClipImageGoalSensor.cls_uuid: spaces.Box(
