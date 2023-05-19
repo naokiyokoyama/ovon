@@ -28,7 +28,7 @@ habitat:
 
     reward_measure: "imagenav_reward"
     success_measure: "success"
-  
+
     measurements:
       success:
         success_distance: 1.0
