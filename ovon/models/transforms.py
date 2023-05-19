@@ -99,10 +99,68 @@ class ShiftAndJitterTransform(Transform):
             x = RandomShiftsAug(16)(x)
         return x
 
+
+class WeakAugmentation(Transform):
+    is_random: bool = True
+
+    def __init__(self, size):
+        self.size = size
+
+    def apply(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = TF.resize(x, self.size, interpolation=TF.InterpolationMode.BICUBIC)
+        x = TF.center_crop(x, output_size=self.size)
+        x = x.float() / 255.0
+        x = RandomApply([ColorJitter(0.3, 0.3, 0.3, 0.3)], p=1.0)(x)
+        x = RandomShiftsAug(4)(x)
+        return x
+
+
+class CLIPTransform(Transform):
+    def __init__(self, size):
+        self.size = size
+        self.mean = (0.48145466, 0.4578275, 0.40821073)
+        self.std = (0.26862954, 0.26130258, 0.27577711)
+
+    def apply(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = TF.resize(x, self.size, interpolation=TF.InterpolationMode.BICUBIC)
+        x = TF.center_crop(x, output_size=self.size)
+        x = x.float() / 255.0
+        x = TF.normalize(x, self.mean, self.std)
+        return x
+
+
+class CLIPWeakTransform(Transform):
+    is_random: bool = True
+
+    def __init__(self, size):
+        self.size = size
+        self.mean = (0.48145466, 0.4578275, 0.40821073)
+        self.std = (0.26862954, 0.26130258, 0.27577711)
+
+    def apply(self, x):
+        x = x.permute(0, 3, 1, 2)
+        x = TF.resize(x, self.size, interpolation=TF.InterpolationMode.BICUBIC)
+        x = TF.center_crop(x, output_size=self.size)
+        x = x.float() / 255.0
+        x = RandomApply([ColorJitter(0.3, 0.3, 0.3, 0.3)], p=1.0)(x)
+        x = RandomShiftsAug(4)(x)
+        x = TF.normalize(x, self.mean, self.std)
+        return x
+
+
 def get_transform(name, size):
     if name == "resize":
         return ResizeTransform(size)
     elif "shift" in name or "jitter" in name:
         return ShiftAndJitterTransform(name, size)
+    elif name == "resize+weak":
+        return WeakAugmentation(size)
+    elif name == "clip":
+        return CLIPTransform(size)
+    elif name == "clip+weak":
+        return CLIPWeakTransform(size)
+
     else:
         raise ValueError(f"Unknown transform {name}")
