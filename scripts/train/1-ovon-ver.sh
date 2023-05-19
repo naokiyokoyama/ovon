@@ -19,11 +19,11 @@ export MAGNUM_LOG=quiet
 MAIN_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)
 export MAIN_ADDR
 
-source /srv/flash1/rramrakhya6/miniconda3/etc/profile.d/conda.sh
+source /srv/flash1/rramrakhya3/miniconda3/etc/profile.d/conda.sh
 conda deactivate
 conda activate ovon
 
-export PYTHONPATH=/srv/flash1/rramrakhya6/spring_2023/habitat-sim/src_python/
+export PYTHONPATH=/srv/flash1/rramrakhya3/spring_2023/habitat-sim/src_python/
 
 TENSORBOARD_DIR="tb/ovon/ver/resnetclip_rgb_text/seed_2/"
 CHECKPOINT_DIR="data/new_checkpoints/ovon/ver/resnetclip_rgb_text/seed_2/"
