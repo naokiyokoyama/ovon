@@ -10,8 +10,7 @@ from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import \
-    build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torchvision import transforms as T
@@ -20,6 +19,9 @@ from ovon.models.encoders.visual_encoder import VisualEncoder
 from ovon.models.transforms import get_transform
 from ovon.task.sensors import ClipImageGoalSensor, ClipObjectGoalSensor
 from ovon.utils.utils import load_encoder
+
+import os
+from ovon.models.encoders.visual_encoder_v2 import VisualEncoder as VisualEncoderV2
 
 
 class OVRLPolicyNet(Net):
@@ -71,9 +73,7 @@ class OVRLPolicyNet(Net):
             )
         else:
             num_actions = get_num_actions(action_space)
-            self.prev_action_embedding = nn.Linear(
-                num_actions, self._n_prev_action
-            )
+            self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
         self._n_prev_action = 32
         rnn_input_size = self._n_prev_action  # test
 
@@ -83,21 +83,26 @@ class OVRLPolicyNet(Net):
         if use_augmentations_test_time and run_type == "eval":
             name = augmentations_name
         self.visual_transform = get_transform(name, size=rgb_image_size)
-        self.visual_transform.randomize_environments = (
-            randomize_augmentations_over_envs
-        )
+        self.visual_transform.randomize_environments = randomize_augmentations_over_envs
 
-        self.visual_encoder = VisualEncoder(
-            image_size=rgb_image_size,
-            backbone=backbone,
-            input_channels=3,
-            resnet_baseplanes=resnet_baseplanes,
-            resnet_ngroups=resnet_baseplanes // 2,
-            avgpooled_image=avgpooled_image,
-            drop_path_rate=drop_path_rate,
-            visual_transform=self.visual_transform,
-            num_environments=num_environments,
-        )
+        if os.environ.get("USE_OVRL_V2", "0") == "1":
+            self.visual_encoder = VisualEncoderV2(
+                image_size=rgb_image_size,
+                backbone="vit_base_path16",
+                checkpoint="data/visual_encoders/ovrl-v2_MAE_base.pth",
+            )
+        else:
+            self.visual_encoder = VisualEncoder(
+                image_size=rgb_image_size,
+                backbone=backbone,
+                input_channels=3,
+                resnet_baseplanes=resnet_baseplanes,
+                resnet_ngroups=resnet_baseplanes // 2,
+                avgpooled_image=avgpooled_image,
+                drop_path_rate=drop_path_rate,
+                visual_transform=self.visual_transform,
+                num_environments=num_environments,
+            )
 
         self.visual_fc = nn.Sequential(
             nn.Flatten(),
@@ -109,11 +114,9 @@ class OVRLPolicyNet(Net):
         )
 
         # pretrained weights
-        if pretrained_encoder is not None:
+        if pretrained_encoder is not None and os.environ.get("USE_OVRL_V2", "0") == "0":
             msg = load_encoder(self.visual_encoder, pretrained_encoder)
-            logger.info(
-                "Using weights from {}: {}".format(pretrained_encoder, msg)
-            )
+            logger.info("Using weights from {}: {}".format(pretrained_encoder, msg))
 
         # freeze backbone
         if freeze_backbone:
@@ -123,14 +126,9 @@ class OVRLPolicyNet(Net):
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
-                int(
-                    observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]
-                )
-                + 1
+                int(observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]) + 1
             )
-            self.obj_categories_embedding = nn.Embedding(
-                self._n_object_categories, 32
-            )
+            self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
             rnn_input_size += 32
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
@@ -150,18 +148,15 @@ class OVRLPolicyNet(Net):
                 rnn_input_size += clip_embedding
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
-            input_gps_dim = observation_space.spaces[
-                EpisodicGPSSensor.cls_uuid
-            ].shape[0]
+            input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
+                0
+            ]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
-                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
-                    0
-                ]
-                == 1
+                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[0] == 1
             ), "Expected compass with 2D rotation."
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
@@ -184,7 +179,7 @@ class OVRLPolicyNet(Net):
 
     @property
     def is_blind(self):
-        return self.visual_encoder.is_blind
+        return False
 
     @property
     def num_recurrent_layers(self):
@@ -210,8 +205,7 @@ class OVRLPolicyNet(Net):
             # We CANNOT use observations.get() here because self.visual_encoder(observations)
             # is an expensive operation. Therefore, we need `# noqa: SIM401`
             if (  # noqa: SIM401
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
-                in observations
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
             ):
                 visual_feats = observations[
                     PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
@@ -229,9 +223,7 @@ class OVRLPolicyNet(Net):
             x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
 
         if ClipObjectGoalSensor.cls_uuid in observations:
-            object_goal = (
-                observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
-            )
+            object_goal = observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
             if self.add_clip_linear_projection:
                 object_goal = self.obj_categories_embedding(object_goal)
             x.append(object_goal)
@@ -240,9 +232,7 @@ class OVRLPolicyNet(Net):
             clip_image_goal = observations[ClipImageGoalSensor.cls_uuid]
             assert clip_image_goal is not None
             if self.add_clip_linear_projection:
-                clip_image_goal = self.obj_categories_embedding(
-                    clip_image_goal
-                )
+                clip_image_goal = self.obj_categories_embedding(clip_image_goal)
             x.append(clip_image_goal)
 
         if EpisodicCompassSensor.cls_uuid in observations:
@@ -253,14 +243,10 @@ class OVRLPolicyNet(Net):
                 ],
                 -1,
             )
-            x.append(
-                self.compass_embedding(compass_observations.squeeze(dim=1))
-            )
+            x.append(self.compass_embedding(compass_observations.squeeze(dim=1)))
 
         if EpisodicGPSSensor.cls_uuid in observations:
-            x.append(
-                self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
-            )
+            x.append(self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid]))
 
         prev_actions = prev_actions.squeeze(-1)
         start_token = torch.zeros_like(prev_actions)
@@ -310,12 +296,8 @@ class OVRLPolicy(NetPolicy):
         run_type: str = "train",
     ):
         if policy_config is not None:
-            discrete_actions = (
-                policy_config.action_distribution_type == "categorical"
-            )
-            self.action_distribution_type = (
-                policy_config.action_distribution_type
-            )
+            discrete_actions = policy_config.action_distribution_type == "categorical"
+            self.action_distribution_type = policy_config.action_distribution_type
         else:
             discrete_actions = True
             self.action_distribution_type = "categorical"
@@ -369,11 +351,7 @@ class OVRLPolicy(NetPolicy):
             )
         filtered_obs = spaces.Dict(
             OrderedDict(
-                (
-                    (k, v)
-                    for k, v in observation_space.items()
-                    if k not in ignore_names
-                )
+                ((k, v) for k, v in observation_space.items() if k not in ignore_names)
             )
         )
         return cls(
