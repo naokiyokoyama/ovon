@@ -170,6 +170,8 @@ class WordnetMapping(MutableMapping):
     def load_categories(
         mapping_file: str
     ) -> Dict[str, str]:
+        if mapping_file is None:
+            return {}
         wordnet_mapping = load_json(mapping_file)
         return wordnet_mapping
 

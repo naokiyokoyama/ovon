@@ -5,11 +5,13 @@ defaults:
   - /habitat_baselines/rl/policy/obs_transforms:
     - resize
     - relabel_image_goal
+    - clip_imagegoal_encoder
   - imagenav_stretch_hm3d
   - override /habitat/task/lab_sensors:
     - image_goal_rotation_sensor
     - compass_sensor
     - gps_sensor
+    - current_episode_uuid_sensor
   - override /habitat/task/measurements:
     - distance_to_goal
     - success
@@ -26,7 +28,7 @@ habitat:
 
     reward_measure: "imagenav_reward"
     success_measure: "success"
-  
+
     measurements:
       success:
         success_distance: 1.0

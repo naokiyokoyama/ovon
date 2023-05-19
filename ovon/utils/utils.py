@@ -36,7 +36,7 @@ def save_image(img, file_name):
 
 
 def load_dataset(path):
-    with gzip.open(path, "rb") as file:
+    with gzip.open(path, "rt") as file:
         data = json.loads(file.read(), encoding="utf-8")
     return data
 

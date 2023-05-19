@@ -118,6 +118,7 @@ class ObjectGoalGenerator:
             coverage_meta_file=coverage_meta_file,
             frame_coverage_threshold=frame_cov_thresh,
         )
+        print("All wordnet categories: {}", self.wordnet_map._mapping)
 
     def _config_sim(self, scene: str) -> Simulator:
         sim_cfg = hsim.SimulatorConfiguration()
@@ -477,8 +478,10 @@ class ObjectGoalGenerator:
                 ):
                     continue
 
+                euc_dist = np.linalg.norm(start_position - closest_pt)
+
                 if not self.disable_euc_to_geo_ratio_check:
-                    dist_ratio = geo_dist / np.linalg.norm(start_position - closest_pt)
+                    dist_ratio = geo_dist / euc_dist
                     if dist_ratio < self.min_geo_to_euc_ratio:
                         continue
 
@@ -512,7 +515,7 @@ class ObjectGoalGenerator:
                 start_positions.append(start_position)
                 start_rotations.append(source_rotation)
                 geodesic_dists.append(geo_dist)
-                euclidean_dists.append(np.linalg.norm(start_position - closest_pt))
+                euclidean_dists.append(float(euc_dist))
                 break
 
             else:
@@ -727,7 +730,12 @@ class ObjectGoalGenerator:
                     np.array(goal_category_to_cluster_distances[object_category]),
                 )
             else:
-                start_positions, start_rotations, geodesic_distances, euclidean_distances = self._sample_start_poses(
+                (
+                    start_positions,
+                    start_rotations,
+                    geodesic_distances,
+                    euclidean_distances,
+                ) = self._sample_start_poses(
                     sim,
                     obj_goals,
                 )
@@ -871,7 +879,12 @@ class ObjectGoalGenerator:
             euclidean_distances = goal["euclidean_distances"]
 
             episodes_for_object = []
-            for start_position, start_rotation, geo_dist, euc_dist in zip(start_positions, start_rotations, geodesic_distances, euclidean_distances):
+            for start_position, start_rotation, geo_dist, euc_dist in zip(
+                start_positions,
+                start_rotations,
+                geodesic_distances,
+                euclidean_distances,
+            ):
                 episode = self._create_episode(
                     episode_id=episode_count,
                     scene_id=scene.replace("data/scene_datasets/", ""),
@@ -915,6 +928,7 @@ def make_episodes_for_scene(args):
         start_poses_per_object,
         episodes_per_object,
         disable_euc_to_geo_ratio_check,
+        disable_wordnet_label,
     ) = args
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
@@ -931,6 +945,9 @@ def make_episodes_for_scene(args):
 
     # Load OVON whitelisted categories
     categories = load_json("data/hm3d_meta/ovon_categories.json")
+    wordnet_mapping_file = "data/wordnet/wordnet_mapping.json"
+    if disable_wordnet_label:
+        wordnet_mapping_file = None
 
     objectgoal_maker = ObjectGoalGenerator(
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
@@ -960,7 +977,7 @@ def make_episodes_for_scene(args):
         min_geo_to_euc_ratio=1.05,
         start_retries=2000,
         max_viewpoint_radius=1.0,
-        wordnet_mapping_file="data/wordnet/wordnet_mapping.json",
+        wordnet_mapping_file=wordnet_mapping_file,
         device_id=device_id,
         sample_dense_viewpoints=True,
         disable_euc_to_geo_ratio_check=disable_euc_to_geo_ratio_check,
@@ -993,6 +1010,7 @@ def make_episodes_for_split(
     start_poses_per_object: int = 2000,
     episodes_per_object: int = -1,
     disable_euc_to_geo_ratio_check: bool = False,
+    disable_wordnet_mapping: bool = False,
 ):
     dataset = habitat.datasets.make_dataset("OVON-v1")
 
@@ -1043,6 +1061,7 @@ def make_episodes_for_split(
                     start_poses_per_object,
                     episodes_per_object,
                     disable_euc_to_geo_ratio_check,
+                    disable_wordnet_mapping,
                 )
             )
 
@@ -1094,6 +1113,11 @@ if __name__ == "__main__":
         action="store_true",
         dest="disable_euc_to_geo_ratio_check",
     )
+    parser.add_argument(
+        "--disable-wordnet-mapping",
+        action="store_true",
+        dest="disable_wordnet_mapping",
+    )
 
     args = parser.parse_args()
     scenes = None
@@ -1126,4 +1150,5 @@ if __name__ == "__main__":
         args.start_poses_per_object,
         args.episodes_per_object,
         args.disable_euc_to_geo_ratio_check,
+        args.disable_wordnet_mapping,
     )
