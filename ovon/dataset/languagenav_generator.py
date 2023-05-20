@@ -1,51 +1,47 @@
 import argparse
 import copy
-import gzip
-import itertools
-import math
 import multiprocessing
 import os
 import random
 from collections import defaultdict
-from typing import Any, Dict, List, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import GPUtil
 import habitat
-import habitat_sim
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import seaborn as sns
-import trimesh
-from habitat.config.default_structured_configs import \
-    HabitatSimSemanticSensorConfig
-from habitat_sim import bindings as hsim
 from habitat_sim._ext.habitat_sim_bindings import SemanticObject
-from habitat_sim.agent.agent import AgentConfiguration, AgentState
+from habitat_sim.agent.agent import AgentState
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_coeffs
 from torchvision.transforms import ToPILImage
 from tqdm import tqdm
 
+from ovon.dataset.languagenav_dataset import LanguageNavEpisode
 from ovon.dataset.objectnav_generator import ObjectGoalGenerator
-from ovon.dataset.ovon_dataset import OVONEpisode
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (ObjectCategoryMapping, WordnetMapping,
-                                         get_hm3d_semantic_scenes)
-from ovon.dataset.visualization import (get_bounding_box, get_color, get_depth,
-                                        objects_in_view)
-from ovon.utils.utils import save_image
+from ovon.dataset.semantic_utils import get_hm3d_semantic_scenes
+from ovon.dataset.visualization import get_bounding_box, objects_in_view
+from ovon.utils.utils import (load_json, load_pickle, save_image, save_pickle,
+                              write_json)
 
 
 class LanguageGoalGenerator(ObjectGoalGenerator):
     def __init__(
         self,
+        outpath: str,
+        visuals_dir: str = "data/visualizations/language_goals_debug/",
+        caption_annotation_file: Optional[str] = None,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
-        self.visuals_dir = "data/visualizations/language_goals_debug/"
+        self.visuals_dir = visuals_dir
+        self.outpath = outpath
+        self.caption_annotations = None
+        print("Caption annotation file: {}".format(caption_annotation_file))
+        if caption_annotation_file is not None:
+            self.caption_annotations = load_json(caption_annotation_file)
         os.makedirs(self.visuals_dir, exist_ok=True)
-    
+
     @staticmethod
     def max_coverage_viewpoint(observations, frame_coverages):
         max_iou = 0
@@ -63,7 +59,9 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         return obs
 
     def _make_prompt(self, obj, observation, sim):
-        object_ids_in_view = objects_in_view(observation["semantic_sensor"], obj.semantic_id)
+        object_ids_in_view = objects_in_view(
+            observation["semantic_sensor"], obj.semantic_id
+        )
         objs_in_view = list(
             filter(
                 lambda obj: obj is not None
@@ -75,10 +73,16 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
             )
         )
 
-        drawn_img, bbs, area_covered = get_bounding_box(
-            observation, [obj] + objs_in_view, depths=None
+        drawn_img, bbox_metadata, area_covered = get_bounding_box(
+            observation, [obj] + objs_in_view, target=obj, depths=None
         )
-        return f"Go to the {obj.category.name()}.", observation, np.asarray(ToPILImage()(drawn_img))
+        result = {
+            "dummy_prompt": f"Go to the {obj.category.name()}.",
+            "observation": observation,
+            "annotated_observation": np.asarray(ToPILImage()(drawn_img)),
+            "bbox_metadata": bbox_metadata,
+        }
+        return result
 
     def _make_goal(
         self,
@@ -86,58 +90,70 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         pose_sampler: PoseSampler,
         obj: SemanticObject,
         with_viewpoints: bool,
-        with_start_poses: bool,
         scene: str,
     ):
-        if with_start_poses:
-            assert with_viewpoints
+        assert with_viewpoints
 
         states = pose_sampler.sample_agent_poses_radially(obj.aabb.center, obj)
         observations = self._render_poses(sim, states)
         observations, states = self._can_see_object(observations, states, obj)
 
         if len(observations) == 0:
-            return None
+            return None, None
 
         frame_coverages = self._compute_frame_coverage(observations, obj.semantic_id)
 
-        keep_goal = self._threshold_object_goals(frame_coverages)
+        keep_goal = self._threshold_language_goals(frame_coverages)
 
         if sum(keep_goal) == 0:
-            return None
+            return None, None
 
         result = {
             "object_category": self.cat_map[obj.category.name()],
             "object_id": obj.id,
             "position": obj.aabb.center.tolist(),
-            "children_object_categories": [],
         }
 
         if not with_viewpoints:
-            return result
+            return result, None
 
         if self.sample_dense_viewpoints:
             goal_viewpoints = self._make_object_viewpoints(sim, obj)
             if len(goal_viewpoints) == 0:
-                return None
+                return None, None
             result["view_points"] = goal_viewpoints
         else:
             goal_viewpoints = self._states_to_viewpoints(states)
             result["view_points"] = goal_viewpoints
 
         max_cov_vp = self.max_coverage_viewpoint(observations, frame_coverages)
-        _, observation, img_bb = self._make_prompt(obj, max_cov_vp, sim)
-        
-        cat_name = "{}_{}".format(obj.category.name().replace("/", "_"), obj.semantic_id)
+        prompt_result = self._make_prompt(obj, max_cov_vp, sim)
 
-        output_path = "{}/raw/{}/{}.png".format(self.visuals_dir, scene, cat_name)
-        save_image(observation["color_sensor"], output_path)
-        output_path = "{}/annotated/{}/{}.png".format(self.visuals_dir, scene, cat_name)
-        save_image(img_bb, output_path)
+        observation = prompt_result["observation"]
+        img_bb = prompt_result["annotated_observation"]
 
-        if not with_start_poses:
-            return result
-        return result
+        cat_name = "{}_{}".format(
+            obj.category.name().replace("/", "_"), obj.semantic_id
+        )
+        prompt_meta = {
+            "metadata": prompt_result["bbox_metadata"],
+        }
+
+        if self.verbose:
+            output_path = "{}/raw/".format(self.outpath)
+            os.makedirs(output_path, exist_ok=True)
+
+            raw_output_path = "{}/raw/{}.png".format(self.outpath, cat_name)
+            save_image(observation["color_sensor"], raw_output_path)
+            prompt_meta["observation"] = raw_output_path
+
+        annotated_output_path = "{}/annotated/{}.png".format(
+            self.outpath, cat_name
+        )
+        save_image(img_bb, annotated_output_path)
+        prompt_meta["annotate_observation"] = annotated_output_path
+
+        return result, prompt_meta
 
     def make_language_goals(
         self,
@@ -149,9 +165,7 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         pose_sampler = PoseSampler(sim=sim, **self.pose_sampler_args)
         scene_id = scene.split("/")[-1].split(".")[0]
 
-        output_path = "{}/raw/{}/".format(self.visuals_dir, scene_id)
-        os.makedirs(output_path, exist_ok=True)
-        output_path = "{}/annotated/{}/".format(self.visuals_dir, scene_id)
+        output_path = "{}/annotated/".format(self.outpath)
         os.makedirs(output_path, exist_ok=True)
 
         objects = [
@@ -159,40 +173,65 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
             for o in sim.semantic_scene.objects
             if self.cat_map[o.category.name()] is not None
         ]
-        self.semantic_id_to_obj = {o.semantic_id: o for o in objects}
+        self.semantic_id_to_obj = {o.semantic_id: o for o in sim.semantic_scene.objects}
 
         language_goals = {}
         results = []
-        for obj in tqdm(objects, total=len(objects), dynamic_ncols=True):
-            goal = self._make_goal(
-                sim, pose_sampler, obj, with_viewpoints, with_start_poses, scene_id
-            )
-            if goal is not None and len(goal["view_points"]) > 0:
-                if goal["object_category"] not in language_goals:
-                    language_goals[goal["object_category"]] = []
+        promp_meta = {}
+        if not os.path.exists("{}/{}.pkl".format(self.outpath, scene_id)):
+            print("Computing language goals for scene: {}".format(scene_id))
+            for obj in tqdm(objects, total=len(objects), dynamic_ncols=True):
+                goal, prompt = self._make_goal(
+                    sim, pose_sampler, obj, with_viewpoints, scene_id
+                )
+                if goal is not None and len(goal["view_points"]) > 0 and len(prompt["metadata"]) > 2:
+                    goal_uuid = "{}_{}".format(goal["object_category"], obj.semantic_id)
+                    if goal_uuid not in language_goals:
+                        language_goals[goal_uuid] = []
 
-                results.append((obj.id, obj.category.name(), len(goal["view_points"])))
+                    results.append((obj.id, obj.category.name(), len(goal["view_points"])))
+                    promp_meta[goal_uuid] = prompt
+                    language_goals[goal_uuid].append(goal)
+            save_pickle(language_goals, "{}/{}.pkl".format(self.outpath, scene_id))
+            write_json(promp_meta, "{}/{}_prompt_meta.json".format(self.outpath, scene_id))
+        else:
+            print("Loading cached language goals for scene: {}".format(scene_id))
+            language_goals = load_pickle("{}/{}.pkl".format(self.outpath, scene_id))
 
         all_goals = []
-        # for object_category, goals in tqdm(language_goals.items()):
-        #     obj_goals = copy.deepcopy(goals)
+        if with_start_poses:
+            for goal_uuid, goals in tqdm(language_goals.items()):
+                obj_goals = copy.deepcopy(goals)
+                prompt = self.caption_annotations.get(goal_uuid)
 
-        #     start_positions, start_rotations = self._sample_start_poses(
-        #         sim,
-        #         obj_goals,
-        #     )
+                if prompt is None:
+                    continue
 
-        #     if len(start_positions) == 0:
-        #         print("Start poses none for: {}".format(object_category))
-        #         continue
+                (
+                    start_positions,
+                    start_rotations,
+                    geodesic_distances,
+                    euclidean_distances,
+                ) = self._sample_start_poses(
+                    sim,
+                    obj_goals,
+                )
 
-        #     all_goals.append(
-        #         {
-        #             "object_goals": goals,
-        #             "start_positions": start_positions,
-        #             "start_rotations": start_rotations,
-        #         }
-        #     )
+                if len(start_positions) == 0:
+                    continue
+
+                all_goals.append(
+                    {
+                        "language_goals": goals,
+                        "start_positions": start_positions,
+                        "start_rotations": start_rotations,
+                        "geodesic_distances": geodesic_distances,
+                        "euclidean_distances": euclidean_distances,
+                        "instructions": prompt["instructions"],
+                        "goal_uuid": goal_uuid,
+                    }
+                )
+
         sim.close()
         return all_goals
 
@@ -203,68 +242,75 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         start_position,
         start_rotation,
         object_category,
+        instructions,
+        object_instance_id,
         shortest_paths=None,
         info=None,
         scene_dataset_config="default",
-        children_object_categories=None,
     ):
-        return OVONEpisode(
+        return LanguageNavEpisode(
             episode_id=str(episode_id),
             goals=[],
             scene_id=scene_id,
             object_category=object_category,
+            object_instance_id=object_instance_id,
+            instructions=instructions,
             start_position=start_position,
             start_rotation=start_rotation,
             shortest_paths=shortest_paths,
             info=info,
             scene_dataset_config=scene_dataset_config,
-            children_object_categories=children_object_categories,
         )
 
     def make_episodes(
         self,
-        object_goals: Dict,
+        language_goals: Dict,
         scene: str,
         episodes_per_object: int = -1,
         split: str = "train",
     ):
-        dataset = habitat.datasets.make_dataset("ObjectNav-v1")
+        dataset = habitat.datasets.make_dataset("LanguageNav-v1")
         dataset.category_to_task_category_id = {}
         dataset.category_to_scene_annotation_category_id = {}
 
-        goals_by_category = defaultdict(list)
+        goals_by_instance = defaultdict(list)
         episode_count = 0
-        print("Total number of object goals: {}".format(len(object_goals)))
-        for goal in object_goals:
-            object_goal = goal["object_goals"][0]
+        print("Total number of object goals: {}".format(len(language_goals)))
+        for goal in language_goals:
+            language_goal = goal["language_goals"][0]
             scene_id = scene.split("/")[-1]
-            goals_category_id = "{}_{}".format(scene_id, object_goal["object_category"])
+            goals_category_id = "{}_{}".format(scene_id, goal["goal_uuid"])
             print(
                 "Goal category: {} - viewpoints: {}, episodes: {}".format(
                     goals_category_id,
-                    sum([len(gg["view_points"]) for gg in goal["object_goals"]]),
+                    sum([len(gg["view_points"]) for gg in goal["language_goals"]]),
                     len(goal["start_positions"]),
                 )
             )
 
-            goals_by_category[goals_category_id].extend(goal["object_goals"])
+            goals_by_instance[goals_category_id].extend(goal["language_goals"])
 
             start_positions = goal["start_positions"]
             start_rotations = goal["start_rotations"]
+            euclidean_distances = goal["euclidean_distances"]
+            geodesic_distances = goal["geodesic_distances"]
 
             episodes_for_object = []
-            for start_position, start_rotation in zip(start_positions, start_rotations):
+            for start_position, start_rotation, euc_dist, geo_dist in zip(start_positions, start_rotations, euclidean_distances, geodesic_distances):
                 episode = self._create_episode(
                     episode_id=episode_count,
+                    object_category=language_goal["object_category"],
+                    object_instance_id=goal["goal_uuid"],
                     scene_id=scene.replace("data/scene_datasets/", ""),
                     scene_dataset_config="./data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
                     start_position=start_position,
                     start_rotation=start_rotation,
                     info={
-                        "geodesic_distance": 0,
-                        "euclidean_distance": 0,
+                        "geodesic_distance": euc_dist,
+                        "euclidean_distance": geo_dist,
+                        "instructions": goal["instructions"],
                     },
-                    object_category=object_goal["object_category"],
+                    instructions=list(goal["instructions"].values()),
                 )
                 episodes_for_object.append(episode)
                 episode_count += 1
@@ -277,11 +323,7 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
 
             dataset.episodes.extend(episodes_for_object)
 
-            # Clean up children object categories
-            for o_g in goal["object_goals"]:
-                del o_g["children_object_categories"]
-
-        dataset.goals_by_category = goals_by_category
+        dataset.goals_by_instance = goals_by_instance
         return dataset
 
 
@@ -294,6 +336,8 @@ def make_episodes_for_scene(args):
         start_poses_per_object,
         episodes_per_object,
         disable_euc_to_geo_ratio_check,
+        visuals_dir,
+        with_start_poses,
     ) = args
     if isinstance(scene, tuple) and outpath is None:
         scene, outpath = scene
@@ -307,6 +351,10 @@ def make_episodes_for_scene(args):
     if os.path.exists(os.path.join(outpath, "{}.json.gz".format(scene_name))):
         print("Skipping scene: {}".format(scene))
         return
+    
+    caption_annotation_file = os.path.join(outpath, "{}_prompt_meta_annotated.json".format(scene_name))
+    if not os.path.exists(caption_annotation_file):
+        caption_annotation_file = None
 
     language_goal_maker = LanguageGoalGenerator(
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
@@ -327,7 +375,7 @@ def make_episodes_for_scene(args):
         mapping_file="ovon/dataset/source_data/Mp3d_category_mapping.tsv",
         categories=None,
         coverage_meta_file="data/coverage_meta/{}.pkl".format(split),
-        frame_cov_thresh=0.05,
+        frame_cov_thresh=0.10,
         goal_vp_cell_size=0.25,
         goal_vp_max_dist=1.0,
         start_poses_per_obj=start_poses_per_object,
@@ -340,14 +388,17 @@ def make_episodes_for_scene(args):
         device_id=device_id,
         sample_dense_viewpoints=True,
         disable_euc_to_geo_ratio_check=disable_euc_to_geo_ratio_check,
+        visuals_dir=visuals_dir,
+        outpath=outpath,
+        caption_annotation_file=caption_annotation_file,
     )
 
-    object_goals = language_goal_maker.make_language_goals(
-        scene=scene, with_viewpoints=True, with_start_poses=True
+    language_goals = language_goal_maker.make_language_goals(
+        scene=scene, with_viewpoints=True, with_start_poses=with_start_poses
     )
     print("Scene: {}".format(scene))
     episode_dataset = language_goal_maker.make_episodes(
-        object_goals,
+        language_goals,
         scene,
         episodes_per_object=episodes_per_object,
         split=split,
@@ -357,7 +408,8 @@ def make_episodes_for_scene(args):
     save_to = os.path.join(outpath, f"{scene_name}.json.gz")
     os.makedirs(os.path.dirname(save_to), exist_ok=True)
     print("Total episodes: {}".format(len(episode_dataset.episodes)))
-    language_goal_maker.save_to_disk(episode_dataset, save_to)
+    if len(episode_dataset.episodes) != 0:
+        language_goal_maker.save_to_disk(episode_dataset, save_to)
 
 
 def make_episodes_for_split(
@@ -369,6 +421,8 @@ def make_episodes_for_split(
     start_poses_per_object: int = 2000,
     episodes_per_object: int = -1,
     disable_euc_to_geo_ratio_check: bool = False,
+    visuals_dir: str = "data/visualizations/language_goals_debug/",
+    with_start_poses: bool = True,
 ):
     dataset = habitat.datasets.make_dataset("OVON-v1")
 
@@ -399,6 +453,8 @@ def make_episodes_for_split(
                     start_poses_per_object,
                     episodes_per_object,
                     disable_euc_to_geo_ratio_check,
+                    visuals_dir,
+                    with_start_poses,
                 )
             )
 
@@ -419,6 +475,8 @@ def make_episodes_for_split(
                     start_poses_per_object,
                     episodes_per_object,
                     disable_euc_to_geo_ratio_check,
+                    visuals_dir,
+                    with_start_poses,
                 )
             )
 
@@ -470,6 +528,14 @@ if __name__ == "__main__":
         action="store_true",
         dest="disable_euc_to_geo_ratio_check",
     )
+    parser.add_argument(
+        "--visuals-dir", type=str, default="data/visualizations/language_goals_debug/"
+    )
+    parser.add_argument(
+        "--with-start-poses",
+        action="store_true",
+        dest="with_start_poses",
+    )
 
     args = parser.parse_args()
     scenes = None
@@ -492,6 +558,7 @@ if __name__ == "__main__":
             args.start_poses_per_object, args.episodes_per_object, args.split
         )
     )
+    print("With start poses: {}".format(args.with_start_poses))
 
     outpath = os.path.join(args.output_path, "{}/content/".format(args.split))
     make_episodes_for_split(
@@ -503,4 +570,6 @@ if __name__ == "__main__":
         args.start_poses_per_object,
         args.episodes_per_object,
         args.disable_euc_to_geo_ratio_check,
+        args.visuals_dir,
+        args.with_start_poses,
     )

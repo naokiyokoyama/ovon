@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import cv2
 import numpy as np
@@ -115,6 +115,7 @@ def save_candidate_imgs(
 def get_bounding_box(
     obs: List[Dict[str, ndarray]],
     objectList: List[SemanticObject],
+    target: Dict[str, Any],
     depths = None
 ):
     """Return the image with bounding boxes drawn on objects inside objectList"""
@@ -130,6 +131,26 @@ def get_bounding_box(
         ).reshape((1, H, W))
 
     boxes = masks_to_boxes(torch.from_numpy(masks))
+    
+    bbox_metadata = []
+    added_wall = False
+    for i, obj in enumerate(objectList):
+        if obj.category.name() == target.category.name() and obj.semantic_id != target.semantic_id and obj.id != target.id:
+            continue
+        if "wall" in obj.category.name() and added_wall:
+            continue
+        if "wall" in obj.category.name():
+            added_wall = True
+        bbox_metadata.append(
+            {
+                "category": obj.category.name(),
+                "semantic_id": obj.semantic_id,
+                "bbox": boxes[i].cpu().detach().numpy().tolist(),
+                "area": float(((boxes[i][2] - boxes[i][0]) * (boxes[i][3] - boxes[i][1])).cpu().detach().numpy() / (H * W)),
+                "is_target": obj.semantic_id == target.semantic_id,
+            }
+        )
+
     area = []
     for box in boxes:
         area.append(
@@ -151,7 +172,7 @@ def get_bounding_box(
         font_size=10,
     )
     boxes = boxes.cpu().detach().numpy()
-    return drawn_img, boxes, area
+    return drawn_img, bbox_metadata, area
 
 
 def _get_iou_pose(

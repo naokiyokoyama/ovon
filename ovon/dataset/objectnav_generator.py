@@ -118,7 +118,6 @@ class ObjectGoalGenerator:
             coverage_meta_file=coverage_meta_file,
             frame_coverage_threshold=frame_cov_thresh,
         )
-        print("All wordnet categories: {}", self.wordnet_map._mapping)
 
     def _config_sim(self, scene: str) -> Simulator:
         sim_cfg = hsim.SimulatorConfiguration()
