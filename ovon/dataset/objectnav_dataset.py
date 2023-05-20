@@ -9,7 +9,6 @@ import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 import attr
-from habitat.config import Config
 from habitat.core.registry import registry
 from habitat.core.simulator import AgentState, ShortestPathPoint
 from habitat.core.utils import DatasetFloatJSONEncoder, not_none_validator
