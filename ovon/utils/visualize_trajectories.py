@@ -35,7 +35,11 @@ def get_nearest_goal(episode, env):
     min_dist = 1000.0
     sim = env.sim
     goal_key = "{}_{}".format(episode.scene_id.split("/")[-1], episode.object_category)
-    goals = env._dataset.goals_by_category[goal_key]
+    if hasattr(env._dataset, "goals_by_category"):
+        goals = env._dataset.goals_by_category[goal_key]
+    else:
+        goal_key = "{}_{}".format(episode.scene_id.split("/")[-1], episode.object_instance_id)
+        goals = env._dataset.goals_by_instance[goal_key]
 
     goal_location = None
     goal_rotation = None
@@ -96,7 +100,7 @@ def generate_trajectories(cfg, video_dir="", num_episodes=1):
 
                 info = env.get_metrics()
                 frame = observations_to_image({"rgb": observations["rgb"]}, info)
-                frame = append_text_to_image(frame, "Go to {}".format(episode.object_category))
+                frame = append_text_to_image(frame, "{}".format(episode.instructions[0]))
                 obs_list.append(frame)
 
                 success = info["success"]
@@ -130,15 +134,15 @@ def main():
     objectnav_config = "config/tasks/objectnav_stretch_hm3d.yaml"
     config = get_config(objectnav_config)
     with read_write(config):
-        config.habitat.dataset.type = "OVON-v1"
+        config.habitat.dataset.type = "LanguageNav-v1"
         config.habitat.dataset.split = "train"
-        config.habitat.dataset.scenes_dir = "data/scene_datasets/"
+        config.habitat.dataset.scenes_dir = "data/scene_datasets/hm3d/"
         config.habitat.dataset.content_scenes = ["*"]
         config.habitat.dataset.data_path = args.data
         del config.habitat.task.lab_sensors["objectgoal_sensor"]
-        config.habitat.task.lab_sensors["clip_objectgoal_sensor"] = ClipObjectGoalSensorConfig()
-        config.habitat.task.measurements.distance_to_goal = OVONDistanceToGoalConfig()
+        # config.habitat.task.measurements.distance_to_goal = OVONDistanceToGoalConfig()
         config.habitat.task.measurements.success.success_distance = 0.25
+
 
     generate_trajectories(config, video_dir=args.video_dir, num_episodes=args.num_episodes)
 

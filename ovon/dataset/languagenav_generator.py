@@ -103,7 +103,7 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
 
         frame_coverages = self._compute_frame_coverage(observations, obj.semantic_id)
 
-        keep_goal = self._threshold_language_goals(frame_coverages)
+        keep_goal = self._threshold_object_goals(frame_coverages)
 
         if sum(keep_goal) == 0:
             return None, None
@@ -139,16 +139,12 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
             "metadata": prompt_result["bbox_metadata"],
         }
 
-        if self.verbose:
-            output_path = "{}/raw/".format(self.outpath)
-            os.makedirs(output_path, exist_ok=True)
+        raw_output_path = "{}/raw/{}/{}.png".format(self.outpath, scene, cat_name)
+        save_image(observation["color_sensor"], raw_output_path)
+        prompt_meta["observation"] = raw_output_path
 
-            raw_output_path = "{}/raw/{}.png".format(self.outpath, cat_name)
-            save_image(observation["color_sensor"], raw_output_path)
-            prompt_meta["observation"] = raw_output_path
-
-        annotated_output_path = "{}/annotated/{}.png".format(
-            self.outpath, cat_name
+        annotated_output_path = "{}/annotated/{}/{}.png".format(
+            self.outpath, scene, cat_name
         )
         save_image(img_bb, annotated_output_path)
         prompt_meta["annotate_observation"] = annotated_output_path
@@ -165,7 +161,9 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         pose_sampler = PoseSampler(sim=sim, **self.pose_sampler_args)
         scene_id = scene.split("/")[-1].split(".")[0]
 
-        output_path = "{}/annotated/".format(self.outpath)
+        output_path = "{}/annotated/{}".format(self.outpath, scene_id)
+        os.makedirs(output_path, exist_ok=True)
+        output_path = "{}/raw/{}".format(self.outpath, scene_id)
         os.makedirs(output_path, exist_ok=True)
 
         objects = [
@@ -320,6 +318,10 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
                     episodes_for_object,
                     min(episodes_per_object, len(episodes_for_object)),
                 )
+            
+            # Clean up children object categories
+            for l_g in goal["language_goals"]:
+                del l_g["children_object_categories"]
 
             dataset.episodes.extend(episodes_for_object)
 

@@ -83,6 +83,8 @@ class LanguageNavDatasetV1(PointNavDatasetV1):
 
     @staticmethod
     def __deserialize_goal(serialized_goal: Dict[str, Any]) -> ObjectGoal:
+        if serialized_goal.get("children_object_categories") is not None:
+            del serialized_goal["children_object_categories"]
         g = ObjectGoal(**serialized_goal)
 
         for vidx, view in enumerate(g.view_points):
@@ -120,6 +122,8 @@ class LanguageNavDatasetV1(PointNavDatasetV1):
 
                 episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
 
+            episode.goals = self.goals_by_instance[episode.goals_key]
+
             if episode.shortest_paths is not None:
                 for path in episode.shortest_paths:
                     for p_index, point in enumerate(path):
@@ -133,3 +137,4 @@ class LanguageNavDatasetV1(PointNavDatasetV1):
                         path[p_index] = ShortestPathPoint(**point)
 
             self.episodes.append(episode)  # type: ignore [attr-defined]
+            break
