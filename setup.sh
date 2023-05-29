@@ -19,5 +19,5 @@ cd habitat-lab
 pip install -e habitat-lab
 pip install -e habitat-baselines
 
-pip install ftfy regex tqdm GPUtil trimesh seaborn
+pip install ftfy regex tqdm GPUtil trimesh seaborn timm scikit-learn
 pip install git+https://github.com/openai/CLIP.git
