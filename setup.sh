@@ -3,7 +3,7 @@
 conda_env_name=ovon
 mamba create -n $conda_env_name python=3.7 cmake=3.14.0 -y
 mamba install -n $conda_env_name \
-  habitat-sim=0.2.3 headless pytorch cudatoolkit=11.3 \
+  habitat-sim=0.2.3 headless pytorch=1.12.1 cudatoolkit=11.3 \
   -c pytorch -c nvidia -c conda-forge -c aihabitat -y
 
 # Install this repo as a package
