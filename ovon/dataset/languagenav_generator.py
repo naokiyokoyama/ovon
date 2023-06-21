@@ -60,7 +60,7 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
 
     def _make_prompt(self, obj, observation, sim):
         object_ids_in_view = objects_in_view(
-            observation["semantic_sensor"], obj.semantic_id
+            observation, obj.semantic_id
         )
         objs_in_view = list(
             filter(
@@ -498,7 +498,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-path",
         type=str,
-        default="data/datasets/langaugenav/hm3d/v1_stretch/",
+        default="data/datasets/langaugenav/hm3d/v2_stretch/",
     )
     parser.add_argument(
         "--num-scenes",

@@ -214,13 +214,20 @@ def get_best_viewpoint_with_posesampler(
     else:
         return False, None
 
-def objects_in_view(obs, target_obj, threshold=0.01):
-    area = np.prod(obs.shape)
-    obj_ids, num_pixels = np.unique(obs, return_counts=True)
-    objects = [
-        obj_ids[i]
-        for i in range(len(num_pixels))
-        if num_pixels[i] / (area) > threshold and obj_ids[i] != target_obj
-    ]
+def objects_in_view(observation, target_obj, threshold=0.01, max_depth=0.4):
+    depth_obs = observation["depth_sensor"]
+    semantic_obs = observation["semantic_sensor"]
+
+    area = np.prod(semantic_obs.shape)
+    obj_ids, num_pixels_per_obj = np.unique(semantic_obs, return_counts=True)
+    objects = []
+
+    for obj_id, total_pixels in zip(obj_ids, num_pixels_per_obj):
+        avg_depth = np.mean(depth_obs * (semantic_obs == obj_id).astype(np.int32))
+        if obj_id == target_obj or avg_depth > max_depth:
+            continue
+        if total_pixels / area > threshold:
+            objects.append(obj_id)
+
     return objects
 
