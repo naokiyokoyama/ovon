@@ -949,6 +949,9 @@ def make_episodes_for_scene(args):
     if disable_wordnet_label:
         wordnet_mapping_file = None
 
+    if split in ["val_unseen_easy", "val_unseen_hard"]:
+        categories = load_json("data/hm3d_meta/ovon_val_splits.json")
+
     objectgoal_maker = ObjectGoalGenerator(
         semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
         img_size=(512, 512),

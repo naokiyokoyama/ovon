@@ -6,8 +6,11 @@ from ovon.utils.utils import count_episodes, load_dataset
 
 
 def test_dataset(path):
+    print(path)
     files = glob.glob(os.path.join(path, "*.json.gz"))
     dataset = load_dataset(files[0])
+
+    print("Total # of episodes: {}".format(count_episodes(dataset)))
 
     for ep in dataset["episodes"]:
         if len(ep["children_object_categories"]) > 0:
