@@ -172,7 +172,8 @@ def edit_config(config, args):
 
     if args.debug_datapath:
         # Only load one scene for faster debugging
-        config.habitat.dataset.content_scenes = ['1UnKg1rAb8A']
+        scenes = "1UnKg1rAb8A" if args.run_type == "train" else "4ok3usBNeis"
+        config.habitat.dataset.content_scenes = [scenes]
 
     if args.single_env:
         config.habitat_baselines.num_environments = 1
@@ -212,12 +213,10 @@ def edit_config(config, args):
 
     if args.run_type == "train":
         for measure_name in ["frontier_exploration_map", "top_down_map"]:
-            if hasattr(
-                config.habitat.task.measurements, measure_name
-            ):
+            if hasattr(config.habitat.task.measurements, measure_name):
                 print(
-                    f"[run.py]: Removing {measure_name} measurement from config"
-                    f" to expedite training."
+                    f"[run.py]: Removing {measure_name} measurement from "
+                    "config to speed up training."
                 )
                 config.habitat.task.measurements.pop(measure_name)
 
