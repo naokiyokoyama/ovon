@@ -10,7 +10,6 @@ defaults:
     - success
     - spl
     - soft_spl
-    - distance_to_goal_reward
     - collisions
     - collision_penalty
     - sum_reward
@@ -23,12 +22,7 @@ habitat:
   task:
     success_reward: 5.0
     slack_reward: -1e-3
-
-    reward_measure: "sum_reward"
-    measurements:
-      sum_reward:
-        reward_terms: ["collision_penalty" ]
-        reward_coefficients: [ 1.0 ]
+    reward_measure: "collision_penalty"
 
   simulator:
     navmesh_settings:
