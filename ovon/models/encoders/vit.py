@@ -142,4 +142,3 @@ def load_ovrl_v2(checkpoint: str, img_size: int) -> nn.Module:
         }
     )
     return encoder
-
