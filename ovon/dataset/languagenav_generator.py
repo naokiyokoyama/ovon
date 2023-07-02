@@ -20,7 +20,8 @@ from ovon.dataset.languagenav_dataset import LanguageNavEpisode
 from ovon.dataset.objectnav_generator import ObjectGoalGenerator
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import get_hm3d_semantic_scenes
-from ovon.dataset.visualization import get_bounding_box, objects_in_view
+from ovon.dataset.visualization import (draw_bbox_on_img, get_bounding_box,
+                                        objects_in_view)
 from ovon.utils.utils import (load_json, load_pickle, save_image, save_pickle,
                               write_json)
 
@@ -31,15 +32,23 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         outpath: str,
         visuals_dir: str = "data/visualizations/language_goals_debug/",
         caption_annotation_file: Optional[str] = None,
+        blacklist_categories: List[str] = [],
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.visuals_dir = visuals_dir
         self.outpath = outpath
         self.caption_annotations = None
+
+        for category in blacklist_categories:
+            if self.cat_map.get(category) is not None:
+                print("Removing {} from category map".format(category))
+                self.cat_map._mapping.pop(category)
+
         print("Caption annotation file: {}".format(caption_annotation_file))
         if caption_annotation_file is not None:
             self.caption_annotations = load_json(caption_annotation_file)
+
         os.makedirs(self.visuals_dir, exist_ok=True)
 
     @staticmethod
@@ -58,29 +67,96 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         obs = sim.get_sensor_observations()
         return obs
 
-    def _make_prompt(self, obj, observation, sim):
-        object_ids_in_view = objects_in_view(
-            observation, obj.semantic_id
+    def dedup_bboxes(self, bbox_metadata):
+        filtered_bbox_metadata = []
+        category_to_instance_map = defaultdict(list)
+        for metadata in bbox_metadata:
+            category_to_instance_map[metadata["category"]].append(metadata)
+            if len(category_to_instance_map[metadata["category"]]) == 1:
+                filtered_bbox_metadata.append(metadata)
+        return filtered_bbox_metadata, category_to_instance_map
+
+    def _make_prompt(
+        self,
+        pose_sampler: PoseSampler,
+        target_obj: SemanticObject,
+        sim: Simulator,
+    ):
+        states = pose_sampler.sample_agent_poses_radially(
+            target_obj.aabb.center,
+            target_obj,
+            radius_min=1.0,
+            radius_max=2.0,
+        )
+        observations = self._render_poses(sim, states)
+        observations, states = self._can_see_object(observations, states, target_obj)
+
+        if len(observations) == 0:
+            return None
+
+        frame_coverages = self._compute_frame_coverage(observations, target_obj.semantic_id)
+
+        keep_goal = self._threshold_object_goals(frame_coverages)
+
+        if sum(keep_goal) == 0:
+            return None
+
+        observation = self.max_coverage_viewpoint(observations, frame_coverages)
+
+        object_ids_in_view, avd, obj_ids, fl_ids = objects_in_view(
+            observation, target_obj.semantic_id
         )
         objs_in_view = list(
             filter(
                 lambda obj: obj is not None
                 and (
                     self.cat_map[obj.category.name()] is not None
-                    or "wall" in obj.category.name().lower()
                 ),
                 [*map(self.semantic_id_to_obj.get, object_ids_in_view)],
             )
         )
+        obj_filtered = list(
+            filter(
+                lambda obj: obj is not None
+                and (
+                    self.cat_map[obj.category.name()] is not None
+                ),
+                [*map(self.semantic_id_to_obj.get, fl_ids)],
+            )
+        )
+        ob_cat_filter = {}
+        fl_ids_to_obj = [*map(self.semantic_id_to_obj.get, obj_ids)]
+        for ob, depth in zip(fl_ids_to_obj, avd):
+            if ob is not None and self.cat_map[ob.category.name()] is not None:
+                ob_cat_filter[self.cat_map[ob.category.name()]] = depth
 
-        drawn_img, bbox_metadata, area_covered = get_bounding_box(
-            observation, [obj] + objs_in_view, target=obj, depths=None
+        drawn_img, bbox_metadata, _ = get_bounding_box(
+            observation, [target_obj] + objs_in_view, target=target_obj, depths=None
+        )
+
+        bbox_metadata, category_to_instance_map = self.dedup_bboxes(bbox_metadata)
+
+        if len(category_to_instance_map) < 3:
+            return None
+
+        bboxes = [bbox["bbox"] for bbox in bbox_metadata]
+        labels = ["{}_{}".format(bbox["category"], bbox["semantic_id"]) for bbox in bbox_metadata]
+
+        drawn_img = draw_bbox_on_img(observation, bboxes, labels)
+
+        obs_aug = {
+            "color_sensor": drawn_img.permute(1, 2, 0).detach().cpu().numpy(),
+            "semantic_sensor": observation["semantic_sensor"],
+        }
+        drawn_img, _, _ = get_bounding_box(
+            obs_aug, obj_filtered, target=target_obj, depths=None, bbox_color="green"
         )
         result = {
-            "dummy_prompt": f"Go to the {obj.category.name()}.",
+            "dummy_prompt": f"Go to the {target_obj.category.name()}.",
             "observation": observation,
             "annotated_observation": np.asarray(ToPILImage()(drawn_img)),
             "bbox_metadata": bbox_metadata,
+            "category_to_instance_map": category_to_instance_map,
         }
         return result
 
@@ -126,8 +202,10 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
             goal_viewpoints = self._states_to_viewpoints(states)
             result["view_points"] = goal_viewpoints
 
-        max_cov_vp = self.max_coverage_viewpoint(observations, frame_coverages)
-        prompt_result = self._make_prompt(obj, max_cov_vp, sim)
+        prompt_result = self._make_prompt(pose_sampler, obj, sim)
+        # Discard object if we can't generate prompt
+        if prompt_result is None:
+            return None, None
 
         observation = prompt_result["observation"]
         img_bb = prompt_result["annotated_observation"]
@@ -393,6 +471,7 @@ def make_episodes_for_scene(args):
         visuals_dir=visuals_dir,
         outpath=outpath,
         caption_annotation_file=caption_annotation_file,
+        blacklist_categories=["window", "window frame"],
     )
 
     language_goals = language_goal_maker.make_language_goals(

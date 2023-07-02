@@ -90,11 +90,17 @@ class PoseSampler:
         self,
         search_center: np.ndarray = None,
         obj: SemanticObject = None,
+        radius_min: float = None,
+        radius_max: float = None,
     ) -> List[AgentState]:
         """Generates AgentState.position and AgentState.rotation for all
         navigable agent poses given a radial sampling method about the
         search_center.
         """
+        if radius_min is None:
+            radius_min = self.radius_min
+        if radius_max is None:
+            radius_max = self.radius_max
 
         floor_height = self._get_floor_height(search_center)
         search_center = np.array([search_center[0], floor_height, search_center[2]])
@@ -102,9 +108,9 @@ class PoseSampler:
         poses: List[AgentState] = []
 
         for i in range(
-            1 + int(np.floor((self.radius_max - self.radius_min) / self.radius_step))
+            1 + int(np.floor((radius_max - radius_min) / self.radius_step))
         ):
-            r = self.radius_min + i * self.radius_step
+            r = radius_min + i * self.radius_step
             for j in range(1 + int(np.floor(360 / self.rot_deg_delta))):
                 theta = np.deg2rad(j * self.rot_deg_delta)
                 x_diff = r * np.cos(theta)

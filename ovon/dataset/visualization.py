@@ -116,7 +116,8 @@ def get_bounding_box(
     obs: List[Dict[str, ndarray]],
     objectList: List[SemanticObject],
     target: Dict[str, Any],
-    depths = None
+    depths: ndarray = None,
+    bbox_color: str = "red",
 ):
     """Return the image with bounding boxes drawn on objects inside objectList"""
     N, H, W = (
@@ -166,13 +167,30 @@ def get_bounding_box(
     drawn_img = draw_bounding_boxes(
         PILToTensor()(img),
         boxes,
-        colors="red",
+        colors=bbox_color,
         width=2,
         labels=labels,
         font_size=10,
     )
     boxes = boxes.cpu().detach().numpy()
     return drawn_img, bbox_metadata, area
+
+
+def draw_bbox_on_img(observation, boxes, labels, bbox_color="red"):
+    if not isinstance(boxes, torch.Tensor):
+        boxes = torch.Tensor(boxes)
+    
+    img = Image.fromarray(observation["color_sensor"][:, :, :3], "RGB")
+        
+    drawn_img = draw_bounding_boxes(
+        PILToTensor()(img),
+        boxes,
+        colors=bbox_color,
+        width=2,
+        labels=labels,
+        font_size=10,
+    )
+    return drawn_img
 
 
 def _get_iou_pose(
@@ -214,20 +232,27 @@ def get_best_viewpoint_with_posesampler(
     else:
         return False, None
 
-def objects_in_view(observation, target_obj, threshold=0.01, max_depth=0.4):
+def objects_in_view(observation, target_obj, threshold=0.005, max_depth=4.5):
     depth_obs = observation["depth_sensor"]
     semantic_obs = observation["semantic_sensor"]
 
     area = np.prod(semantic_obs.shape)
     obj_ids, num_pixels_per_obj = np.unique(semantic_obs, return_counts=True)
     objects = []
+    depth_filtered = []
 
+    avg_depths = []
     for obj_id, total_pixels in zip(obj_ids, num_pixels_per_obj):
-        avg_depth = np.mean(depth_obs * (semantic_obs == obj_id).astype(np.int32))
-        if obj_id == target_obj or avg_depth > max_depth:
+        mask = (semantic_obs == obj_id).astype(np.int32)
+        avg_depth = np.sum(depth_obs * mask) / np.sum(mask)
+        avg_depths.append(avg_depth)
+        if obj_id != target_obj and avg_depth > max_depth:
+            depth_filtered.append(obj_id)
             continue
         if total_pixels / area > threshold:
             objects.append(obj_id)
+    
+    #print("Post depth filtering: {}/{} - {}".format(len(depth_filtered), len(obj_ids), avg_depths))
 
-    return objects
+    return objects, avg_depths, obj_ids, depth_filtered
 
