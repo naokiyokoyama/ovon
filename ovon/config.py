@@ -1,17 +1,10 @@
 from dataclasses import dataclass
 
 from habitat.config.default_structured_configs import (
-    CollisionsMeasurementConfig,
-    HabitatConfig,
-    LabSensorConfig,
-    MeasurementConfig,
-    SimulatorConfig,
-)
+    CollisionsMeasurementConfig, HabitatConfig, LabSensorConfig,
+    MeasurementConfig, SimulatorConfig)
 from habitat_baselines.config.default_structured_configs import (
-    HabitatBaselinesRLConfig,
-    PolicyConfig,
-    RLConfig,
-)
+    HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
@@ -68,6 +61,11 @@ class AngleSuccessMeasurementConfig(MeasurementConfig):
 @dataclass
 class AngleToGoalMeasurementConfig(MeasurementConfig):
     type: str = "AngleToGoal"
+
+
+@dataclass
+class FailureModeMeasurementConfig(MeasurementConfig):
+    type: str = "FailureModeMeasure"
 
 
 @dataclass
@@ -226,6 +224,13 @@ cs.store(
     group="habitat/task/measurements",
     name="ovon_object_goal_id",
     node=OVONObjectGoalIDMeasurementConfig,
+)
+
+cs.store(
+    package="habitat.task.measurements.failure_modes",
+    group="habitat/task/measurements",
+    name="failure_modes",
+    node=FailureModeMeasurementConfig,
 )
 
 cs.store(

@@ -79,6 +79,12 @@ def main():
         help="If set, only CLIP text goals will be used for evaluation.",
     )
     parser.add_argument(
+        "--eval-analysis",
+        "-v",
+        action="store_true",
+        help="If set, add semantic sensor for evaluation.",
+    )
+    parser.add_argument(
         "opts",
         default=None,
         nargs=argparse.REMAINDER,
@@ -97,7 +103,6 @@ def main():
     with read_write(config):
         edit_config(config, args)
 
-    # print(OmegaConf.to_yaml(config))
     execute_exp(config, args.run_type)
 
 
@@ -183,9 +188,8 @@ def edit_config(config, args):
         for k in ["depth_sensor", "rgb_sensor"]:
             if k in config.habitat.simulator.agents.main_agent.sim_sensors:
                 config.habitat.simulator.agents.main_agent.sim_sensors.pop(k)
-        from habitat.config.default_structured_configs import (
-            HabitatSimDepthSensorConfig,
-        )
+        from habitat.config.default_structured_configs import \
+            HabitatSimDepthSensorConfig
 
         # Camera required to load in a scene; use dummy 1x1 depth camera
         config.habitat.simulator.agents.main_agent.sim_sensors.update(
@@ -193,6 +197,15 @@ def edit_config(config, args):
         )
         if hasattr(config.habitat_baselines.rl.policy, "obs_transforms"):
             config.habitat_baselines.rl.policy.obs_transforms = {}
+
+    if args.eval_analysis:
+        from habitat.config.default_structured_configs import \
+            HabitatSimSemanticSensorConfig
+
+        # Camera required to load in a scene; use dummy 1x1 depth camera
+        config.habitat.simulator.agents.main_agent.sim_sensors.update(
+            {"semantic_sensor": HabitatSimSemanticSensorConfig(height=640, width=360)}
+        )
 
     if (
         args.text_goals

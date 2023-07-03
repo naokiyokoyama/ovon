@@ -37,38 +37,27 @@ from habitat.utils.render_wrapper import overlay_frame
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch,
-    apply_obs_transforms_obs_space,
-    get_active_obs_transforms,
-)
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
+    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
+    get_active_obs_transforms)
+from habitat_baselines.common.tensorboard_utils import (TensorboardWriter,
+                                                        get_writer)
 from habitat_baselines.rl.ddppo.algo import DDPPO
-from habitat_baselines.rl.ddppo.ddp_utils import (
-    EXIT,
-    get_distrib_size,
-    init_distrib_slurm,
-    is_slurm_batch_job,
-    load_resume_state,
-    rank0_only,
-    requeue_job,
-    save_resume_state,
-)
+from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, get_distrib_size,
+                                                  init_distrib_slurm,
+                                                  is_slurm_batch_job,
+                                                  load_resume_state,
+                                                  rank0_only, requeue_job,
+                                                  save_resume_state)
 from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
-    PointNavResNetNet,
-    PointNavResNetPolicy,
-)
+    PointNavResNetNet, PointNavResNetPolicy)
 from habitat_baselines.rl.ppo import PPO
-from habitat_baselines.utils.common import (
-    batch_obs,
-    generate_video,
-    get_num_actions,
-    inference_mode,
-    is_continuous_action_space,
-)
+from habitat_baselines.utils.common import (batch_obs, generate_video,
+                                            get_num_actions, inference_mode,
+                                            is_continuous_action_space)
 from omegaconf import OmegaConf
 from torch import nn
 
-from ovon.measurements.nav import OVONObjectGoalID
+from ovon.measurements.nav import FailureModeMeasure, OVONObjectGoalID
 from ovon.utils.utils import load_pickle
 
 if TYPE_CHECKING:
@@ -366,7 +355,7 @@ class VERPIRLNavTrainer(VERTrainer):
             step_id = ckpt_dict["extra_state"]["step"]
             print(step_id)
         else:
-            ckpt_dict = {"config": None}
+            ckpt_dict["config"] = None
 
         config = self._get_resume_state_config_or_new_config(ckpt_dict["config"])
 
@@ -631,6 +620,11 @@ class VERPIRLNavTrainer(VERTrainer):
                             "target": target_obj,
                         }
                         ep_json_dict.update(self._extract_scalars_from_info(infos[i]))
+                        
+                        for key, val in infos[i].items():
+                            if FailureModeMeasure.cls_uuid in key:
+                                ep_json_dict[key] = val
+                        logger.info(ep_json_dict)
                         hash_key_str = (
                             f"{current_episodes_info[i].scene_id}"
                             f"_{current_episodes_info[i].episode_id}"
