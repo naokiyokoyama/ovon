@@ -1,5 +1,4 @@
-import time
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -8,11 +7,17 @@ from habitat.utils import profiling_wrapper
 from habitat_baselines import VERTrainer
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
-    get_active_obs_transforms)
-from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, load_resume_state,
-                                                  rank0_only, requeue_job,
-                                                  save_resume_state)
+    apply_obs_transforms_batch,
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    EXIT,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
 from habitat_baselines.rl.ver.task_enums import ReportWorkerTasks
 from habitat_baselines.rl.ver.timing import Timing
 from habitat_baselines.utils.common import cosine_decay, inference_mode
@@ -33,7 +38,6 @@ if TYPE_CHECKING:
 
 @baseline_registry.register_trainer(name="ver_pirlnav")
 class VERPIRLNavTrainer(VERTrainer):
-
     def _setup_actor_critic_agent(self, ppo_cfg: "DictConfig") -> None:
         r"""Sets up actor critic and agent for PPO.
 
@@ -80,7 +84,9 @@ class VERPIRLNavTrainer(VERTrainer):
                 },
                 strict=False,
             )
-            logger.info("Missing keys when loading pretrained wieghts: {}".format(missing_keys))
+            logger.info(
+                "Missing keys when loading pretrained wieghts: {}".format(missing_keys)
+            )
         elif self.config.habitat_baselines.rl.ddppo.pretrained_encoder:
             prefix = "actor_critic.net.visual_encoder."
             self.actor_critic.net.visual_encoder.load_state_dict(
@@ -156,9 +162,7 @@ class VERPIRLNavTrainer(VERTrainer):
             lr_scheduler.load_state_dict(resume_state["lr_sched_state"])
 
             requeue_stats = resume_state["requeue_stats"]
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
+            self._last_checkpoint_percent = requeue_stats["_last_checkpoint_percent"]
             count_checkpoints = requeue_stats["count_checkpoints"]
 
         ppo_cfg = self.config.habitat_baselines.rl.ppo
@@ -169,9 +173,7 @@ class VERPIRLNavTrainer(VERTrainer):
             profiling_wrapper.on_start_step()
 
             if ppo_cfg.use_linear_clip_decay:
-                self.agent.clip_param = ppo_cfg.clip_param * (
-                    1 - self.percent_done()
-                )
+                self.agent.clip_param = ppo_cfg.clip_param * (1 - self.percent_done())
 
             if rank0_only() and self._should_save_resume_state():
                 requeue_stats = dict(
@@ -225,9 +227,7 @@ class VERPIRLNavTrainer(VERTrainer):
                     with self.timer.avg_time("overlap_transfers"):
                         self.learning_rollouts.copy(self.rollouts)
 
-                self.preemption_decider.end_rollout(
-                    self.rollouts.num_steps_to_collect
-                )
+                self.preemption_decider.end_rollout(self.rollouts.num_steps_to_collect)
 
                 self.queues.report.put(
                     (
@@ -246,7 +246,7 @@ class VERPIRLNavTrainer(VERTrainer):
             lrs = {}
             for i, param_group in enumerate(self.agent.optimizer.param_groups):
                 lrs["lr_{}".format(i)] = param_group["lr"]
-            
+
             learner_metrics = {
                 **losses,
                 **lrs,
@@ -285,9 +285,7 @@ class VERPIRLNavTrainer(VERTrainer):
                 )
                 count_checkpoints += 1
 
-        self.window_episode_stats = (
-            self.report_worker.get_window_episode_stats()
-        )
+        self.window_episode_stats = self.report_worker.get_window_episode_stats()
 
         [w.close() for w in self._all_workers]
         [w.join() for w in self._all_workers]
