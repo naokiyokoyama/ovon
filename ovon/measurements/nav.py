@@ -216,6 +216,7 @@ class FailureModeMeasure(Measure):
         metrics["nearest_object"] = nearest_object
         metrics["nearest_object_distance"] = nearest_object_distance
         metrics["objects_within_2m"] = ",".join(objects_within_2m)
+        metrics["position"] = ",".join([str(i) for i in current_position.tolist()])
 
         if not is_success:
             if not self._goal_seen and distance_to_target > 2.0:
