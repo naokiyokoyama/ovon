@@ -56,7 +56,7 @@ def plot_barplot(x, y, output_path):
     fig.savefig(output_path)
 
 
-def main(input_path, output_path):
+def region_analysis(input_path, output_path):
     categories_by_region = load_json("data/hm3d_meta/hm3d_categories_by_region.json")
 
     region_per_category = {}
@@ -130,6 +130,11 @@ def main(input_path, output_path):
         # print("Categories in NaN: {}".format(set(all_categories).intersection(set(categories_by_region["NaN"]))))
         # print("Regions: {}".format(set(categories_by_region.keys())))
 
+
+def semantic_failures():
+    pass
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -139,4 +144,4 @@ if __name__ == "__main__":
         "--output-path", type=str, help="Path to the output file", required=True
     )
     args = parser.parse_args()
-    main(args.input_path, args.output_path)
+    region_analysis(args.input_path, args.output_path)

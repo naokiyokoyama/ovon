@@ -66,6 +66,8 @@ class AngleToGoalMeasurementConfig(MeasurementConfig):
 @dataclass
 class FailureModeMeasurementConfig(MeasurementConfig):
     type: str = "FailureModeMeasure"
+    categories_file: str = "data/hm3d_meta/ovon_categories.json"
+    mapping_file: str = "ovon/dataset/source_data/Mp3d_category_mapping.tsv"
 
 
 @dataclass

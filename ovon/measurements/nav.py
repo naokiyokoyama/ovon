@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import numpy as np
@@ -7,7 +8,8 @@ from habitat.core.registry import registry
 from habitat.core.simulator import Simulator
 from habitat.tasks.nav.nav import NavigationEpisode, NavigationTask, Success
 
-from ovon.utils.utils import load_pickle
+from ovon.dataset.semantic_utils import ObjectCategoryMapping
+from ovon.utils.utils import load_json, load_pickle
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -143,6 +145,12 @@ class FailureModeMeasure(Measure):
         self._config = config
         self._goal_seen = False
         self._elapsed_steps = 0
+        self._ovon_categories = load_json(config.categories_file)
+        self.cat_map = ObjectCategoryMapping(
+            config.mapping_file,
+            coverage_meta_file="data/coverage_meta/train.pkl",
+            frame_coverage_threshold=0.05
+        )
         super().__init__()
 
     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
@@ -155,7 +163,23 @@ class FailureModeMeasure(Measure):
         self._goal_seen = False
         self._max_area = 0
         self._elapsed_steps = 0
+        self._reached_within_success_area = False
+        self.set_goal_positions(task)
         self.update_metric(episode=episode, task=task, observations=observations, *args, **kwargs)  # type: ignore
+    
+    def set_goal_positions(self, task):
+        sim = task._sim
+        categories = self._ovon_categories["train"]
+
+        semantic_scene = sim.semantic_annotations()
+        category_to_positions = defaultdict(list)
+        for obj in semantic_scene.objects:
+            relabelled_category = self.cat_map[obj.category.name()]
+            if relabelled_category is not None and relabelled_category in categories:
+                category_to_positions[obj.category.name()].append(obj.aabb.center)
+        print("Total categories: {} - {}".format(len(category_to_positions), len(semantic_scene.objects)))
+        
+        self.category_to_positions = category_to_positions
 
     def visible_goal_area(self, observations, episode, task):
         scene_id = episode.scene_id.split("/")[-1]
@@ -189,10 +213,14 @@ class FailureModeMeasure(Measure):
         ].get_metric()
         is_success = task.measurements.measures[Success.cls_uuid].get_metric()
 
+        if distance_to_target < 0.25 and not is_success:
+            self._reached_within_success_area = True
+
         metrics = {
             "exploration": 0.0,
             "last_mile_nav": 0.0,
             "recognition": 0.0,
+            "stop_failure": 0.0,
             "nearest_object": "",
             "nearest_object_distance": 0,
             "objects_within_2m": [],
@@ -205,16 +233,17 @@ class FailureModeMeasure(Measure):
         nearest_object = ""
         nearest_object_distance = 100
         objects_within_2m = []
-        for object_key in object_keys:
-            goals = task._dataset.goals_by_category[object_key]
-            distance = min([self._euclidean_distance(current_position, goal.position) for goal in goals])
+        for object_key, positions in self.category_to_positions.items():
+            # goals = task._dataset.goals_by_category[object_key]
+            # distance = min([self._euclidean_distance(current_position, goal.position) for goal in goals])
+            distance = min([self._euclidean_distance(current_position, position) for position in positions])
             if distance < 2.0 and nearest_object_distance > distance:
                 nearest_object = object_key.split("_")[-1]
                 nearest_object_distance = distance
             if distance < 2.0:
                 objects_within_2m.append(object_key.split("_")[-1])
         metrics["nearest_object"] = nearest_object
-        metrics["nearest_object_distance"] = nearest_object_distance
+        metrics["nearest_object_distance"] = float(nearest_object_distance)
         metrics["objects_within_2m"] = ",".join(objects_within_2m)
         metrics["position"] = ",".join([str(i) for i in current_position.tolist()])
 
@@ -226,5 +255,6 @@ class FailureModeMeasure(Measure):
             if self._goal_seen and distance_to_target > 2.0:
                 metrics["recognition"] = 1.0
         metrics["area_seen"] = self._max_area
+        metrics["reached_within_success_area"] = self._reached_within_success_area
 
         self._metric = metrics
