@@ -9,10 +9,13 @@ from typing import Any, Dict, List, Optional
 import GPUtil
 import habitat
 import numpy as np
+import torch
 from habitat_sim._ext.habitat_sim_bindings import SemanticObject
 from habitat_sim.agent.agent import AgentState
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_coeffs
+from lavis.models import load_model_and_preprocess
+from PIL import Image
 from torchvision.transforms import ToPILImage
 from tqdm import tqdm
 
@@ -48,6 +51,8 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         print("Caption annotation file: {}".format(caption_annotation_file))
         if caption_annotation_file is not None:
             self.caption_annotations = load_json(caption_annotation_file)
+        
+        self.init_blip2()
 
         os.makedirs(self.visuals_dir, exist_ok=True)
 
@@ -70,10 +75,15 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
     def dedup_bboxes(self, bbox_metadata):
         filtered_bbox_metadata = []
         category_to_instance_map = defaultdict(list)
+        object_ids = set()
         for metadata in bbox_metadata:
+            obj_id = "{}_{}".format(metadata["category"], metadata["semantic_id"])
+            if obj_id in object_ids:
+                continue
             category_to_instance_map[metadata["category"]].append(metadata)
             if len(category_to_instance_map[metadata["category"]]) == 1:
                 filtered_bbox_metadata.append(metadata)
+            object_ids.add(obj_id)
         return filtered_bbox_metadata, category_to_instance_map
 
     def _make_prompt(
@@ -142,6 +152,8 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         bboxes = [bbox["bbox"] for bbox in bbox_metadata]
         labels = ["{}_{}".format(bbox["category"], bbox["semantic_id"]) for bbox in bbox_metadata]
 
+        blip2_description = self.blip2_caption(self.cat_map[target_obj.category.name()], observation["color_sensor"])
+
         drawn_img = draw_bbox_on_img(observation, bboxes, labels)
 
         obs_aug = {
@@ -157,8 +169,22 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
             "annotated_observation": np.asarray(ToPILImage()(drawn_img)),
             "bbox_metadata": bbox_metadata,
             "category_to_instance_map": category_to_instance_map,
+            "target_description": blip2_description,
         }
+        print("Target: {} - {}".format(target_obj.id, blip2_description))
         return result
+
+    def init_blip2(self):
+        self.blip2, self.blip2_vis_processors, _ = load_model_and_preprocess(
+            name="blip2_t5", model_type="pretrain_flant5xxl", is_eval=True, device=torch.device("cuda")
+        )
+
+    def blip2_caption(self, object_category, observation):
+        with torch.no_grad():
+            obs = Image.fromarray(observation).convert("RGB")
+            obs_preprocessed = self.blip2_vis_processors["eval"](obs).unsqueeze(0).cuda()
+            attribute = self.blip2.generate({"image": obs_preprocessed, "prompt": "Question: describe the {}? Answer:".format(object_category)})
+            return attribute
 
     def _make_goal(
         self,
@@ -215,6 +241,8 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         )
         prompt_meta = {
             "metadata": prompt_result["bbox_metadata"],
+            "category_to_instance_map": prompt_result["category_to_instance_map"],
+            "target_description": prompt_result["target_description"],
         }
 
         raw_output_path = "{}/raw/{}/{}.png".format(self.outpath, scene, cat_name)

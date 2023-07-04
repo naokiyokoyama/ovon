@@ -17,6 +17,16 @@ Based on this dictionary which contains information about 2d bounding boxes give
 Don't use any absolute values of the numbers, only use relative directions. Think of it as giving an instruction to a robot agent based on these coordinates. Add a prefix "Instruction: Find the .." or "Instruction: Go to .." to the generated instruction.
 """
 
+PROMPT_WITH_DESCRIPTION = """
+Generate an informative and natural instruction to a robot agent based on the given information(a,b):
+a. Region Semantics: {}
+b. Target Object Description: {}
+Based on the region semantics dictionary which contains information about 2d bounding boxes given in the form of (xmin,ymin,xmax,ymax) in a view of the target object where (0,0) is the top left corner of the frame and a description of the apperance of target object write an language instruction describing the location of the target object, {}, spatially relative to other objects as references.
+There are some rules:
+Don't use any absolute values of the numbers, only use relative directions. Do not show bounding box coordinates in the output. Think of giving this as an instruction to a robot agent based on the given details. Add a prefix "Instruction: Find the .." or "Instruction: Go to .." to the generated instruction.
+"""
+
+
 PROMPT_3D = """
 {}
 Based on this dictionary which contains information about 3d bounding boxes of objects with center in (x,y,z) and size of the bounding box along x,y,z given in sizes_x_y_z,
@@ -62,13 +72,15 @@ class PromptGenerator:
         objects_in_view = [obj for obj in objects_in_view if not obj["is_target"]]
         objects_in_view = sorted(objects_in_view, key=lambda x: x["area"], reverse=True)
 
+        print(target_object)
+
         # Drop wall from objects in view randomly
         if random.random() < 0.5:
             objects_in_view = [obj for obj in objects_in_view if not obj["category"] == "wall"]
 
         prompt_args = {}
         num_objects_to_sample = min(ceil(len(objects_in_view) * keep), 3)
-        objects_in_view = objects_in_view[:num_objects_to_sample]
+        #objects_in_view = objects_in_view[:num_objects_to_sample]
 
         prompt_args[target_object["category"]] = target_object["bbox"]
         for obj in objects_in_view:
@@ -76,10 +88,17 @@ class PromptGenerator:
 
         if type == "2d":
             PROMPT = PROMPT_2D
+        elif type == "with_captions":
+            PROMPT = PROMPT_WITH_DESCRIPTION
         else:
             raise NotImplementedError
+        
+        print(viewpoint.keys())
 
-        prompt = PROMPT.format(prompt_args, target_object["category"])
+        description = target_object["category"] + ": " + viewpoint["target_description"][0]
+
+        prompt = PROMPT.format(prompt_args, description, target_object["category"])
+
         return prompt
 
     def generate(self, model: str = "gpt-3.5-turbo", use_openai_api: bool = True):
@@ -93,10 +112,13 @@ class PromptGenerator:
             viewpoint["instructions"] = {}
 
             for d in drop_rate:
-                prompt = self.get_prompt(viewpoint, keep=d)
-                print(prompt, vp["annotate_observation"])
+                prompt = self.get_prompt(viewpoint, keep=d, type="with_captions")
+                if uuid == "picture_350":
+                    print(prompt, vp["annotate_observation"])
+                    print("\n\n")
                 if use_openai_api:
                     response = self.gpt_call(model=model, prompt=prompt)
+                    # response = None
                     if response is None:
                         viewpoint["instructions"][f"@{1-d}"] = "API_failure"
                         cnt += 1
