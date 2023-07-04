@@ -6,11 +6,10 @@ import time
 
 import cv2
 import tqdm
-
 from add_text import add_text_to_image
 from blip_model import BLIP2
 from label_image import BLIPLabeller
-from llava_descriptor import LLaVALabeller, LLaVA
+from llava_descriptor import LLaVA, LLaVALabeller
 
 
 def parse_json(json_path: str, data_parent_dir: str):
@@ -42,7 +41,7 @@ def parse_json(json_path: str, data_parent_dir: str):
 
 
 def main(json_path, data_parent_dir):
-    model = LLaVA("../LLaVA/LLaVA-7B-v0")
+    model = LLaVA("data/pretrained_models/LLaVA-7B-v0")
     for j in json_path:
         process_json(j, data_parent_dir, model)
 
@@ -60,6 +59,7 @@ def process_json(json_path, data_parent_dir, model):
 
     for i_path, b, c, t in zip(imgs, bboxes, classes, target_indices):
         annotated_path = i_path.replace("raw", "annotated")
+        print(f"Processing {i_path}...")
         if not osp.isfile(i_path) or not osp.isfile(annotated_path):
             print(
                 f"SKIPPING! Existence of (img, annot): "
@@ -67,22 +67,22 @@ def process_json(json_path, data_parent_dir, model):
             )
             continue
         i = cv2.cvtColor(cv2.imread(i_path), cv2.COLOR_BGR2RGB)
-        labeller = BLIPLabeller(
-            blip_model=None,
-            img_rgb=i,
-            bboxes=b,
-            classes=c,
-            target_idx=t,
-            llava_model=model,
-
-        )
-        # labeller = LLaVALabeller(
-        #     model=model,
+        # labeller = BLIPLabeller(
+        #     blip_model=None,
         #     img_rgb=i,
         #     bboxes=b,
         #     classes=c,
         #     target_idx=t,
+        #     llava_model=model,
+
         # )
+        labeller = LLaVALabeller(
+            model=model,
+            img_rgb=i,
+            bboxes=b,
+            classes=c,
+            target_idx=t,
+        )
         arrangements = labeller.label_image()
         if len(arrangements) == 0:
             target = c[t]
@@ -105,10 +105,10 @@ def process_json(json_path, data_parent_dir, model):
 
         # Identify objects that were verified
         for idx, (top_left_pt, bottom_right_pt) in enumerate(b):
-            if idx not in labeller.bad_indices:
-                cv2.rectangle(
-                    img, top_left_pt, bottom_right_pt, (0, 255, 0), 2
-                )
+            #if idx not in labeller.bad_indices:
+            cv2.rectangle(
+                img, top_left_pt, bottom_right_pt, (0, 255, 0), 2
+            )
 
         cv2.imwrite(filename, img)
 

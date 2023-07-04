@@ -23,6 +23,16 @@ a. Region Semantics: {}
 b. Target Object Description: {}
 Based on the region semantics dictionary which contains information about 2d bounding boxes given in the form of (xmin,ymin,xmax,ymax) in a view of the target object where (0,0) is the top left corner of the frame and a description of the apperance of target object write an language instruction describing the location of the target object, {}, spatially relative to other objects as references.
 There are some rules:
+Don't use any absolute values of the numbers, only use relative directions. Do not show bounding box coordinates in the output. Think of giving this as an instruction to a robot agent based on the given details. Add a prefix "Instruction: Find the .." or "Instruction: Go to .." to the generated instruction. Generate only a one or two line instructions.
+"""
+
+
+PROMPT_WITH_DESCRIPTION_MULTI = """
+Generate an informative and natural instruction to a robot agent based on the given information(a,b):
+a. Region Semantics: {}
+b. Target Object Description: {}
+Based on the region semantics dictionary which contains information about 2d bounding boxes given in the form of (xmin,ymin,xmax,ymax) in a view of the target object where (0,0) is the top left corner of the frame and a description of the apperance of target object write an language instruction describing the location of the target object, {}, spatially relative to other objects as references.
+There are some rules:
 Don't use any absolute values of the numbers, only use relative directions. Do not show bounding box coordinates in the output. Think of giving this as an instruction to a robot agent based on the given details. Add a prefix "Instruction: Find the .." or "Instruction: Go to .." to the generated instruction.
 """
 
@@ -90,6 +100,8 @@ class PromptGenerator:
             PROMPT = PROMPT_2D
         elif type == "with_captions":
             PROMPT = PROMPT_WITH_DESCRIPTION
+        elif type == "with_captions_multi":
+            PROMPT = PROMPT_WITH_DESCRIPTION_MULTI
         else:
             raise NotImplementedError
         
@@ -101,7 +113,7 @@ class PromptGenerator:
 
         return prompt
 
-    def generate(self, model: str = "gpt-3.5-turbo", use_openai_api: bool = True):
+    def generate(self, model: str = "gpt-3.5-turbo", use_openai_api: bool = True, prompt_type: str = "with_captions"):
         drop_rate = [0.75,.25,.5]
         cnt = 0
         objects = 0
@@ -112,13 +124,13 @@ class PromptGenerator:
             viewpoint["instructions"] = {}
 
             for d in drop_rate:
-                prompt = self.get_prompt(viewpoint, keep=d, type="with_captions")
-                if uuid == "picture_350":
-                    print(prompt, vp["annotate_observation"])
-                    print("\n\n")
+                prompt = self.get_prompt(viewpoint, keep=d, type=prompt_type)
+
+                print(prompt, vp["annotate_observation"])
+                print("\n\n")
                 if use_openai_api:
                     response = self.gpt_call(model=model, prompt=prompt)
-                    # response = None
+
                     if response is None:
                         viewpoint["instructions"][f"@{1-d}"] = "API_failure"
                         cnt += 1
@@ -147,7 +159,7 @@ def main(args):
         viewpoints=viewpoints,
     )
 
-    viewpoint_annotations = prompt_generator.generate()
+    viewpoint_annotations = prompt_generator.generate(prompt_type=args.prompt)
     prompt_generator.save_to_disk(viewpoint_annotations, args.output_path)
 
 
@@ -156,6 +168,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--path", type=str)
     parser.add_argument("--output-path", type=str)
+    parser.add_argument("--prompt", type=str, default="with_captions_multi")
 
     args = parser.parse_args()
     

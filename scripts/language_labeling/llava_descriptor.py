@@ -113,6 +113,7 @@ class LLaVA:
 
         qs = query
         if mm_use_im_start_end:
+            print(type(qs), type("\n" + DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_PATCH_TOKEN * image_token_len + DEFAULT_IM_END_TOKEN))
             qs = (
                 qs
                 + "\n"
@@ -199,14 +200,13 @@ class LLaVALabeller:
 
     def label_image(self):
         target_object = self.classes[self.target_idx]
-        query = (
-            f"Describe where the {target_object} is relative to the other objects, "
-            "using only one sentence."
-        )
-        answer = self.model.eval(query, self.img_rgb)
+        query = f"Describe the apperance of {target_object}, using only a few words."
+        print(target_object)
+        print(query)
+        answer = self.model.eval(self.img_rgb, query)
         print(query)
         print(answer)
-        return answer
+        return [answer]
 
 
 if __name__ == "__main__":

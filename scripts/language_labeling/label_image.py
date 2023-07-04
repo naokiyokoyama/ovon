@@ -1,14 +1,12 @@
 import itertools
+import math
 import random
 import time
-
-import math
 from typing import Dict, List, Optional
 
 import cv2
 import inflect
 import numpy as np
-
 from add_text import add_text_to_image
 from blip_model import BLIP2
 
@@ -37,7 +35,7 @@ inflect = inflect.engine()
 
 
 VERBOSE = True
-USE_POLLER = True
+USE_POLLER = False
 USE_COLORS = False
 DRAW_RECTANGLES = False
 
