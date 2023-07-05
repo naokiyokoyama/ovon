@@ -52,7 +52,8 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
         if caption_annotation_file is not None:
             self.caption_annotations = load_json(caption_annotation_file)
         
-        self.init_blip2()
+        if caption_annotation_file is None:
+            self.init_blip2()
 
         os.makedirs(self.visuals_dir, exist_ok=True)
 
@@ -426,8 +427,8 @@ class LanguageGoalGenerator(ObjectGoalGenerator):
                 )
             
             # Clean up children object categories
-            for l_g in goal["language_goals"]:
-                del l_g["children_object_categories"]
+            # for l_g in goal["language_goals"]:
+            #     del l_g["children_object_categories"]
 
             dataset.episodes.extend(episodes_for_object)
 
