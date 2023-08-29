@@ -256,5 +256,7 @@ class FailureModeMeasure(Measure):
                 metrics["recognition"] = 1.0
         metrics["area_seen"] = self._max_area
         metrics["reached_within_success_area"] = self._reached_within_success_area
+        metrics["num_steps"] = self._elapsed_steps
 
+        self._elapsed_steps += 1
         self._metric = metrics
