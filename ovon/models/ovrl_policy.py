@@ -17,6 +17,7 @@ from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torchvision import transforms as T
 
+from ovon.models.encoders.dinov2_encoder import DINOV2Encoder
 from ovon.models.encoders.vc1_encoder import VC1Encoder
 from ovon.models.encoders.visual_encoder import VisualEncoder
 from ovon.models.encoders.visual_encoder_v2 import (
@@ -96,6 +97,8 @@ class OVRLPolicyNet(Net):
             )
         elif backbone == "vc1":
             self.visual_encoder = VC1Encoder()
+        elif backbone == "dinov2":
+            self.visual_encoder = DINOV2Encoder()
         else:
             self.visual_encoder = VisualEncoder(
                 image_size=rgb_image_size,
@@ -119,13 +122,17 @@ class OVRLPolicyNet(Net):
         )
 
         # pretrained weights
-        if pretrained_encoder is not None and backbone not in ["ovrl_v2", "vc1"]:
+        if pretrained_encoder is not None and backbone not in [
+            "ovrl_v2",
+            "vc1",
+            "dinov2",
+        ]:
             msg = load_encoder(self.visual_encoder, pretrained_encoder)
             logger.info("Using weights from {}: {}".format(pretrained_encoder, msg))
 
         # freeze backbone
         if freeze_backbone:
-            if backbone != "vc1":
+            if backbone not in ["vc1", "dinov2"]:
                 for p in self.visual_encoder.backbone.parameters():
                     p.requires_grad = False
             else:
