@@ -2,8 +2,7 @@ from typing import Any, Optional
 
 import numpy as np
 import torch
-from habitat_baselines.rl.ddppo.policy.running_mean_and_var import \
-    RunningMeanAndVar
+from habitat_baselines.rl.ddppo.policy.running_mean_and_var import RunningMeanAndVar
 from torch import nn as nn
 from torch.nn import functional as F
 
@@ -120,12 +119,16 @@ class VisualEncoder(nn.Module):
         else:
             raise ValueError("unknown backbone {}".format(backbone))
 
-    def forward(self, observations: "TensorDict") -> torch.Tensor:  # type: ignore
+    def forward(
+        self, observations: "TensorDict", *args, **kwargs  # type: ignore
+    ) -> torch.Tensor:
         rgb = observations["rgb"]
         num_environments = rgb.size(0)
         x = self.visual_transform(rgb, num_environments)
 
-        if self.avgpooled_image:  # For compatibility with the habitat_baselines implementation
+        if (
+            self.avgpooled_image
+        ):  # For compatibility with the habitat_baselines implementation
             x = F.avg_pool2d(x, 2)
         x = self.running_mean_and_var(x)
         x = self.backbone(x)
