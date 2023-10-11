@@ -17,6 +17,7 @@ from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torchvision import transforms as T
 
+from ovon.models.encoders.vc1_encoder import VC1Encoder
 from ovon.models.encoders.visual_encoder import VisualEncoder
 from ovon.models.encoders.visual_encoder_v2 import (
     VisualEncoder as VisualEncoderV2,
@@ -93,6 +94,8 @@ class OVRLPolicyNet(Net):
                 visual_transform=self.visual_transform,
                 checkpoint="data/visual_encoders/ovrl-v2_MAE_base.pth",
             )
+        elif backbone == "vc1":
+            self.visual_encoder = VC1Encoder()
         else:
             self.visual_encoder = VisualEncoder(
                 image_size=rgb_image_size,
@@ -116,14 +119,22 @@ class OVRLPolicyNet(Net):
         )
 
         # pretrained weights
-        if pretrained_encoder is not None and backbone != "ovrl_v2":
+        if pretrained_encoder is not None and backbone not in ["ovrl_v2", "vc1"]:
             msg = load_encoder(self.visual_encoder, pretrained_encoder)
             logger.info("Using weights from {}: {}".format(pretrained_encoder, msg))
 
         # freeze backbone
         if freeze_backbone:
-            for p in self.visual_encoder.backbone.parameters():
-                p.requires_grad = False
+            if backbone != "vc1":
+                for p in self.visual_encoder.backbone.parameters():
+                    p.requires_grad = False
+            else:
+                for p in self.visual_encoder.parameters():
+                    p.requires_grad = False
+                for module in self.visual_encoder.modules():
+                    if "BatchNorm" in type(module).__name__:
+                        module.momentum = 0.0
+                self.visual_encoder.eval()
         logger.info("RGB encoder is {}".format(backbone))
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
