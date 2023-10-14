@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from habitat.config.default_structured_configs import (
     CollisionsMeasurementConfig, HabitatConfig, LabSensorConfig,
@@ -111,7 +112,7 @@ class OVONPolicyConfig(PolicyConfig):
     avgpooled_image: bool = False
     drop_path_rate: float = 0.0
     freeze_backbone: bool = True
-    pretrained_encoder: str = "data/visual_encoders/omnidata_DINO_02.pth"
+    pretrained_encoder: Optional[str] = None
 
     clip_model: str = "RN50"
     add_clip_linear_projection: bool = False

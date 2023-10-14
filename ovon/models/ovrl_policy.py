@@ -2,6 +2,7 @@ from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
 import clip
+import numpy as np
 import torch
 import torch.nn as nn
 from gym import spaces
@@ -9,20 +10,20 @@ from habitat import logger
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
-from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import (
-    build_rnn_state_encoder,
-)
+from habitat_baselines.rl.ddppo.policy import PointNavResNetNet, resnet
+from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
+from habitat_baselines.rl.models.rnn_state_encoder import \
+    build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torchvision import transforms as T
 
 from ovon.models.encoders.dinov2_encoder import DINOV2Encoder
+from ovon.models.encoders.habitat_resnet import HabitatResnetEncoder
 from ovon.models.encoders.vc1_encoder import VC1Encoder
 from ovon.models.encoders.visual_encoder import VisualEncoder
-from ovon.models.encoders.visual_encoder_v2 import (
-    VisualEncoder as VisualEncoderV2,
-)
+from ovon.models.encoders.visual_encoder_v2 import \
+    VisualEncoder as VisualEncoderV2
 from ovon.models.transforms import get_transform
 from ovon.task.sensors import ClipImageGoalSensor, ClipObjectGoalSensor
 from ovon.utils.utils import load_encoder
@@ -99,7 +100,7 @@ class OVRLPolicyNet(Net):
             self.visual_encoder = VC1Encoder()
         elif backbone == "dinov2":
             self.visual_encoder = DINOV2Encoder()
-        else:
+        elif backbone == "ovrl_v1":
             self.visual_encoder = VisualEncoder(
                 image_size=rgb_image_size,
                 backbone=backbone,
@@ -110,6 +111,22 @@ class OVRLPolicyNet(Net):
                 drop_path_rate=drop_path_rate,
                 visual_transform=self.visual_transform,
                 num_environments=num_environments,
+            )
+        else:
+            fuse_keys = ["rgb"]
+            use_obs_space = spaces.Dict(
+                {
+                    k: observation_space.spaces[k]
+                    for k in fuse_keys
+                    if len(observation_space.spaces[k].shape) == 3
+                }
+            )
+
+            self.visual_encoder = HabitatResnetEncoder(
+                observation_space=use_obs_space,
+                baseplanes=resnet_baseplanes,
+                ngroups=resnet_baseplanes // 2,
+                make_backbone=getattr(resnet, backbone),
             )
 
         self.visual_fc = nn.Sequential(
@@ -142,7 +159,7 @@ class OVRLPolicyNet(Net):
                     if "BatchNorm" in type(module).__name__:
                         module.momentum = 0.0
                 self.visual_encoder.eval()
-        logger.info("RGB encoder is {}".format(backbone))
+        logger.info("RGB encoder is {}, Frozen: {}".format(backbone, freeze_backbone))
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
