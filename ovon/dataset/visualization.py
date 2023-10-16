@@ -10,11 +10,12 @@ from habitat_sim.agent.agent import AgentState
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import d3_40_colors_rgb
 from numpy import ndarray
-from ovon.dataset.pose_sampler import PoseSampler
 from PIL import Image
 from torchvision.ops import masks_to_boxes
 from torchvision.transforms import PILToTensor
 from torchvision.utils import draw_bounding_boxes
+
+from ovon.dataset.pose_sampler import PoseSampler
 
 IMAGE_DIR = "data/images/ovon_dataset_gen/debug"
 MAX_DIST = [0, 0, 200]  # Blue
@@ -42,14 +43,16 @@ color2RGB = {
     "Navy": (0, 0, 128),
 }
 
+
 def get_depth(obs, objects):
     obj_depths = []
     for obj in objects:
         id = obj.semantic_id
         depth = np.mean(obs["depth"][obs["semantic"] == id])
         obj_depths.append("{:.2f}".format(depth))
-        
+
     return obj_depths
+
 
 def get_color(obs, objects):
     """
@@ -66,9 +69,7 @@ def get_color(obs, objects):
             axis=1,
         )
         maj_color = np.bincount(color_ids).argmax()
-        if (color_ids[color_ids == maj_color]).shape[0] / color_ids.shape[
-            0
-        ] > 0.5:
+        if (color_ids[color_ids == maj_color]).shape[0] / color_ids.shape[0] > 0.5:
             obj_colors.append(list(color2RGB.keys())[maj_color])
         else:
             obj_colors.append(None)
@@ -81,9 +82,7 @@ def obs_to_frame(obs):
     dmap_colored = cv2.applyColorMap(dmap, cv2.COLORMAP_VIRIDIS)
 
     semantic_obs = obs["semantic_sensor"]
-    semantic_img = Image.new(
-        "P", (semantic_obs.shape[1], semantic_obs.shape[0])
-    )
+    semantic_img = Image.new("P", (semantic_obs.shape[1], semantic_obs.shape[0]))
     semantic_img.putpalette(d3_40_colors_rgb.flatten())
     semantic_img.putdata((semantic_obs.flatten() % 40).astype(np.uint8))
     semantic_img = semantic_img.convert("RGB")
@@ -113,9 +112,7 @@ def save_candidate_imgs(
 
 
 def get_bounding_box(
-    obs: List[Dict[str, ndarray]],
-    objectList: List[SemanticObject],
-    depths = None
+    obs: List[Dict[str, ndarray]], objectList: List[SemanticObject], depths=None
 ):
     """Return the image with bounding boxes drawn on objects inside objectList"""
     N, H, W = (
@@ -125,23 +122,28 @@ def get_bounding_box(
     )
     masks = np.zeros((N, H, W))
     for i, object in enumerate(objectList):
-        masks[i] = (
-            obs["semantic"] == np.array([[(object.semantic_id)]])
-        ).reshape((1, H, W))
+        masks[i] = (obs["semantic"] == np.array([[(object.semantic_id)]])).reshape(
+            (1, H, W)
+        )
 
     boxes = masks_to_boxes(torch.from_numpy(masks))
     area = []
     for box in boxes:
         area.append(
-            ((box[2] - box[0]) * (box[3] - box[1])).cpu().detach().numpy()
-            / (H * W)
+            ((box[2] - box[0]) * (box[3] - box[1])).cpu().detach().numpy() / (H * W)
         )
     rgb_key = "color" if "color" in obs.keys() else "rgb"
     img = Image.fromarray(obs[rgb_key][:, :, :3], "RGB")
     if depths is None:
-        labels = [f"{obj.category.name()}_{obj.semantic_id}" for i,obj in enumerate(objectList)]
+        labels = [
+            f"{obj.category.name()}_{obj.semantic_id}"
+            for i, obj in enumerate(objectList)
+        ]
     else:
-        labels = [f"{obj.category.name()}_{obj.semantic_id}_d = {depths[i]}" for i,obj in enumerate(objectList)]
+        labels = [
+            f"{obj.category.name()}_{obj.semantic_id}_d = {depths[i]}"
+            for i, obj in enumerate(objectList)
+        ]
     drawn_img = draw_bounding_boxes(
         PILToTensor()(img),
         boxes,
@@ -154,9 +156,7 @@ def get_bounding_box(
     return drawn_img, boxes, area
 
 
-def _get_iou_pose(
-    sim: Simulator, pose: AgentState, objectList: List[SemanticObject]
-):
+def _get_iou_pose(sim: Simulator, pose: AgentState, objectList: List[SemanticObject]):
     """Get coverage of all the objects in the objectList"""
     agent = sim.get_agent(0)
     agent.set_state(pose)
@@ -175,9 +175,7 @@ def get_best_viewpoint_with_posesampler(
     pose_sampler: PoseSampler,
     objectList: List[SemanticObject],
 ):
-    search_center = np.mean(
-        np.array([obj.aabb.center for obj in objectList]), axis=0
-    )
+    search_center = np.mean(np.array([obj.aabb.center for obj in objectList]), axis=0)
     candidate_states = pose_sampler.sample_agent_poses_radially(search_center)
     candidate_poses_ious = list(
         _get_iou_pose(sim, pos, objectList) for pos, _ in candidate_states

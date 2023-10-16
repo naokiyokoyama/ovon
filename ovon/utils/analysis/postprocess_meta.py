@@ -19,7 +19,7 @@ def postprocess_meta(input_path, output_path):
     categories_by_region = defaultdict(list)
     for idx, row in df.iterrows():
         categories_by_region[row["Region Proposal"]].append(row["Category"])
-    
+
     for k, v in categories_by_region.items():
         print(k, len(v))
 
@@ -44,9 +44,11 @@ def max_similarity(clip_m, category, val_seen_categories):
 
     prompt = PROMPT.format(category=category)
     text_embedding = clip_embeddings(clip_m, [prompt] + categories)
-    return torch.cosine_similarity(
-        text_embedding[0].unsqueeze(0), text_embedding[1:]
-    ).max().item()
+    return (
+        torch.cosine_similarity(text_embedding[0].unsqueeze(0), text_embedding[1:])
+        .max()
+        .item()
+    )
 
 
 def semantic_failures(input_path):
@@ -55,7 +57,7 @@ def semantic_failures(input_path):
     records = load_json(input_path)
 
     failures = 0
-    failure_modes = defaultdict(int)
+    defaultdict(int)
     for k, v in records.items():
         failures += 1 - v["success"]
         if not v["success"]:
@@ -63,8 +65,6 @@ def semantic_failures(input_path):
             category = v["target"]
             if category in nearest_objects:
                 nearest_objects.remove(category)
-    
-
 
 
 def failure_metrics(input_path, output_path):
@@ -76,19 +76,24 @@ def failure_metrics(input_path, output_path):
         failures += 1 - v["success"]
         if not v["success"]:
             for kk in v.keys():
-                if kk in ["failure_modes.recognition", "failure_modes.exploration", "failure_modes.last_mile_nav", "failure_modes.stop_failure"]:
+                if kk in [
+                    "failure_modes.recognition",
+                    "failure_modes.exploration",
+                    "failure_modes.last_mile_nav",
+                    "failure_modes.stop_failure",
+                ]:
                     failure_modes[kk] += v[kk]
-    
-    failure_modes = {k: v/failures for k, v in failure_modes.items()}
+
+    failure_modes = {k: v / failures for k, v in failure_modes.items()}
     labels = list(failure_modes.keys())
     metrics = list(failure_modes.values())
 
-    colors = sns.color_palette('pastel')[0:5]
+    colors = sns.color_palette("pastel")[0:5]
 
-    #create pie chart
+    # create pie chart
     fig, ax = plt.subplots(figsize=(6, 3))
-    ax.pie(metrics, labels = labels, colors = colors, autopct='%.0f%%')
-    fig.savefig(output_path, bbox_inches='tight')
+    ax.pie(metrics, labels=labels, colors=colors, autopct="%.0f%%")
+    fig.savefig(output_path, bbox_inches="tight")
 
     print(failure_modes)
 

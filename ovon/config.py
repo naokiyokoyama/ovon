@@ -2,10 +2,17 @@ from dataclasses import dataclass
 from typing import Optional
 
 from habitat.config.default_structured_configs import (
-    CollisionsMeasurementConfig, HabitatConfig, LabSensorConfig,
-    MeasurementConfig, SimulatorConfig)
+    CollisionsMeasurementConfig,
+    HabitatConfig,
+    LabSensorConfig,
+    MeasurementConfig,
+    SimulatorConfig,
+)
 from habitat_baselines.config.default_structured_configs import (
-    HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
+    HabitatBaselinesRLConfig,
+    PolicyConfig,
+    RLConfig,
+)
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
@@ -160,42 +167,42 @@ cs.store(
 )
 
 cs.store(
-    package=f"habitat.task.lab_sensors.clip_objectgoal_sensor",
+    package="habitat.task.lab_sensors.clip_objectgoal_sensor",
     group="habitat/task/lab_sensors",
     name="clip_objectgoal_sensor",
     node=ClipObjectGoalSensorConfig,
 )
 
 cs.store(
-    package=f"habitat.task.lab_sensors.clip_imagegoal_sensor",
+    package="habitat.task.lab_sensors.clip_imagegoal_sensor",
     group="habitat/task/lab_sensors",
     name="clip_imagegoal_sensor",
     node=ClipImageGoalSensorConfig,
 )
 
 cs.store(
-    package=f"habitat.task.lab_sensors.clip_goal_selector_sensor",
+    package="habitat.task.lab_sensors.clip_goal_selector_sensor",
     group="habitat/task/lab_sensors",
     name="clip_goal_selector_sensor",
     node=ClipGoalSelectorSensorConfig,
 )
 
 cs.store(
-    package=f"habitat.task.lab_sensors.image_goal_rotation_sensor",
+    package="habitat.task.lab_sensors.image_goal_rotation_sensor",
     group="habitat/task/lab_sensors",
     name="image_goal_rotation_sensor",
     node=ImageGoalRotationSensorConfig,
 )
 
 cs.store(
-    package=f"habitat.task.lab_sensors.current_episode_uuid_sensor",
+    package="habitat.task.lab_sensors.current_episode_uuid_sensor",
     group="habitat/task/lab_sensors",
     name="current_episode_uuid_sensor",
     node=CurrentEpisodeUUIDSensorConfig,
 )
 
 cs.store(
-    package=f"habitat.task.lab_sensors.episode_start_uuid_sensor",
+    package="habitat.task.lab_sensors.episode_start_uuid_sensor",
     group="habitat/task/lab_sensors",
     name="episode_start_uuid_sensor",
     node=EpisodeStartUUIDSensorConfig,

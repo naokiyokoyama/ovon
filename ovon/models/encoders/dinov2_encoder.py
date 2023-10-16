@@ -1,7 +1,7 @@
 import torch
+import torch.hub
 import torch.nn as nn
 from torchvision import transforms
-import torch.hub
 
 
 class DINOV2Encoder(nn.Module):

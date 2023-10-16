@@ -14,7 +14,7 @@ habitat:
   task:
     success_reward: 2.5
     slack_reward: -1e-3
-  
+
   simulator:
     navmesh_settings:
       agent_max_climb: 0.1

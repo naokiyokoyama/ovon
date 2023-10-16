@@ -4,10 +4,8 @@ import os
 import random
 from collections import defaultdict
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from tqdm import tqdm
 
 from ovon.dataset.semantic_utils import WordnetMapping
@@ -69,7 +67,9 @@ def load_val_categories(path="data/hm3d_meta/ovon_val_categories.csv"):
     df = pd.read_csv(path)
     val_unseen_easy = list(set(df["val_unseen_easy"].values))
     print(type(df["val_unseen_hard"]))
-    val_unseen_hard = list(set(list(df["val_unseen_hard"].values) + list(df["train_blacklist"].values)))
+    val_unseen_hard = list(
+        set(list(df["val_unseen_hard"].values) + list(df["train_blacklist"].values))
+    )
     print(len(val_unseen_easy), len(val_unseen_hard))
     return val_unseen_easy, val_unseen_hard
 
@@ -95,8 +95,12 @@ def split_val_unseen_manual(path, output_path):
                     category_count[cat] = 0
                 category_count[cat] += 1
 
-    train_categories = list(set(categories) - set(val_unseen_hard) - set(val_unseen_easy))
-    train_categories = sorted(train_categories, key=lambda x: category_count[x], reverse=True)
+    train_categories = list(
+        set(categories) - set(val_unseen_hard) - set(val_unseen_easy)
+    )
+    train_categories = sorted(
+        train_categories, key=lambda x: category_count[x], reverse=True
+    )
 
     data = {
         "train": train_categories,
@@ -184,30 +188,31 @@ def split_val_unseen(path, output_path, n_bins=50):
     print("Total train categories: {}".format(len(train_categories)))
     print("Total val categories: {}".format(len(val_categories)))
 
-    df = pd.DataFrame({
-        "category": list(category_count.keys()),
-        "instances": list(category_count.values()),
-    })
+    df = pd.DataFrame(
+        {
+            "category": list(category_count.keys()),
+            "instances": list(category_count.values()),
+        }
+    )
     df.sort_values(by="instances", inplace=True, ascending=False)
     print(df.columns)
 
     df.to_csv(os.path.join(output_path, "all_category_count.csv"), index=False)
 
-    df = pd.DataFrame({
-        "category": list(val_category_count.keys()),
-        "instances": list(val_category_count.values()),
-    })
+    df = pd.DataFrame(
+        {
+            "category": list(val_category_count.keys()),
+            "instances": list(val_category_count.values()),
+        }
+    )
     df.sort_values(by="instances", inplace=True, ascending=False)
     df.to_csv(os.path.join(output_path, "val_category_count.csv"), index=False)
-
 
     write_json(
         train_categories,
         os.path.join(output_path, "ovon_train_categories.json"),
     )
-    write_json(
-        val_categories, os.path.join(output_path, "ovon_val_categories.json")
-    )
+    write_json(val_categories, os.path.join(output_path, "ovon_val_categories.json"))
     write_json(
         {k: v for k, v in category_count.items() if k in train_categories},
         os.path.join(output_path, "ovon_train_category_count.json"),
@@ -246,22 +251,18 @@ def filter_and_save_dataset(
 
     for idx, file in tqdm(enumerate(files)):
         dataset = load_dataset(file)
-        filtered_episodes, filtered_goals = filter_episodes(
-            dataset, categories
-        )
+        filtered_episodes, filtered_goals = filter_episodes(dataset, categories)
         # print("Pre and post filtering episodes: {}/{}".format(len(filtered_episodes), len(dataset["episodes"])))
-        assert len(filtered_episodes) == len(dataset["episodes"]), "Filtering should not change the number of episodes"
+        assert len(filtered_episodes) == len(
+            dataset["episodes"]
+        ), "Filtering should not change the number of episodes"
 
         if split == "val":
             num_left = max_episodes - num_added
             num_gz_remaining = num_gz_files - idx
-            num_needed = min(
-                num_left / num_gz_remaining, len(dataset["episodes"])
-            )
+            num_needed = min(num_left / num_gz_remaining, len(dataset["episodes"]))
 
-            filtered_episodes = random.sample(
-                filtered_episodes, int(num_needed)
-            )
+            filtered_episodes = random.sample(filtered_episodes, int(num_needed))
             num_added += len(filtered_episodes)
 
         dataset["goals_by_category"] = filtered_goals
@@ -275,7 +276,9 @@ def filter_and_save_dataset(
             os.path.join(output_path, os.path.basename(file)),
         )
     sampled_categories = set(sampled_categories)
-    print("Total episodes: {}, categories: {}".format(num_added, len(sampled_categories)))
+    print(
+        "Total episodes: {}, categories: {}".format(num_added, len(sampled_categories))
+    )
 
 
 def split_dataset(path, output_path, max_episodes=3000):
@@ -283,8 +286,12 @@ def split_dataset(path, output_path, max_episodes=3000):
 
     # os.makedirs(os.path.join(output_path, "train/content"), exist_ok=True)
     os.makedirs(os.path.join(output_path, "val_seen_filtered/content"), exist_ok=True)
-    os.makedirs(os.path.join(output_path, "val_unseen_easy_filtered/content"), exist_ok=True)
-    os.makedirs(os.path.join(output_path, "val_unseen_hard_filtered/content"), exist_ok=True)
+    os.makedirs(
+        os.path.join(output_path, "val_unseen_easy_filtered/content"), exist_ok=True
+    )
+    os.makedirs(
+        os.path.join(output_path, "val_unseen_hard_filtered/content"), exist_ok=True
+    )
 
     # filter_and_save_dataset(
     #     os.path.join(path, "train/content"),

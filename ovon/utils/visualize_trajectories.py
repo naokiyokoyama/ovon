@@ -8,15 +8,16 @@ from habitat import get_config, logger
 from habitat.config import read_write
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
-from habitat.utils.visualizations.utils import (append_text_to_image,
-                                                images_to_video,
-                                                observations_to_image)
+from habitat.utils.visualizations.utils import (
+    append_text_to_image,
+    images_to_video,
+    observations_to_image,
+)
 from habitat_sim.utils.common import quat_from_two_vectors
 from numpy import ndarray
 from tqdm import tqdm
 
 from ovon.config import ClipObjectGoalSensorConfig, OVONDistanceToGoalConfig
-from ovon.dataset import ovon_dataset
 
 
 def _face_object(object_position: np.array, point: ndarray):
@@ -44,10 +45,8 @@ def get_nearest_goal(episode, env):
     for goal in goals:
         for view_point in goal.view_points:
             position = view_point.agent_state.position
-            
-            dist = sim.geodesic_distance(
-                agent_position, position
-            )
+
+            dist = sim.geodesic_distance(agent_position, position)
             if min_dist > dist:
                 min_dist = dist
                 goal_location = position
@@ -67,36 +66,40 @@ def generate_trajectories(cfg, video_dir="", num_episodes=1):
         logger.info("Total episodes: {}".format(len(env.episodes)))
         num_episodes = min(len(env.episodes), num_episodes)
         for episode_id in tqdm(range(num_episodes)):
-            follower = ShortestPathFollower(
-                env._sim, goal_radius, False
-            )
+            follower = ShortestPathFollower(env._sim, goal_radius, False)
             env.reset()
             success = 0
             episode = env.current_episode
             goal_position, goal_rotation = get_nearest_goal(episode, env)
-            
+
             info = {}
             obs_list = []
             if goal_position is None:
                 continue
 
             while not env.episode_over:
-                best_action = follower.get_next_action(
-                    goal_position
-                )
+                best_action = follower.get_next_action(goal_position)
 
-                if "distance_to_goal" in info.keys() and info["distance_to_goal"] < 0.1 and best_action != HabitatSimActions.stop:
+                if (
+                    "distance_to_goal" in info.keys()
+                    and info["distance_to_goal"] < 0.1
+                    and best_action != HabitatSimActions.stop
+                ):
                     best_action = HabitatSimActions.stop
 
                 observations = env.step(best_action)
 
                 if best_action == HabitatSimActions.stop:
                     position = env.sim.get_agent_state().position
-                    observations = env.sim.get_observations_at(position, goal_rotation, False)
+                    observations = env.sim.get_observations_at(
+                        position, goal_rotation, False
+                    )
 
                 info = env.get_metrics()
                 frame = observations_to_image({"rgb": observations["rgb"]}, info)
-                frame = append_text_to_image(frame, "Go to {}".format(episode.object_category))
+                frame = append_text_to_image(
+                    frame, "Go to {}".format(episode.object_category)
+                )
                 obs_list.append(frame)
 
                 success = info["success"]
@@ -110,21 +113,19 @@ def generate_trajectories(cfg, video_dir="", num_episodes=1):
         print("Total episodes: {}".format(total_episodes))
 
         print("\n\nEpisode success: {}".format(total_success / total_episodes))
-        print("SPL: {}, {}, {}".format(spl/total_episodes, spl, total_episodes))
-        print("Success: {}, {}, {}".format(total_success/total_episodes, total_success, total_episodes))
+        print("SPL: {}, {}, {}".format(spl / total_episodes, spl, total_episodes))
+        print(
+            "Success: {}, {}, {}".format(
+                total_success / total_episodes, total_success, total_episodes
+            )
+        )
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data", type=str, default="data/episodes/sampled.json.gz"
-    )
-    parser.add_argument(
-        "--video-dir", type=str, default="data/video_dir/"
-    )
-    parser.add_argument(
-        "--num-episodes", type=int, default=2
-    )
+    parser.add_argument("--data", type=str, default="data/episodes/sampled.json.gz")
+    parser.add_argument("--video-dir", type=str, default="data/video_dir/")
+    parser.add_argument("--num-episodes", type=int, default=2)
     args = parser.parse_args()
 
     objectnav_config = "config/tasks/objectnav_stretch_hm3d.yaml"
@@ -136,11 +137,16 @@ def main():
         config.habitat.dataset.content_scenes = ["*"]
         config.habitat.dataset.data_path = args.data
         del config.habitat.task.lab_sensors["objectgoal_sensor"]
-        config.habitat.task.lab_sensors["clip_objectgoal_sensor"] = ClipObjectGoalSensorConfig()
+        config.habitat.task.lab_sensors["clip_objectgoal_sensor"] = (
+            ClipObjectGoalSensorConfig()
+        )
         config.habitat.task.measurements.distance_to_goal = OVONDistanceToGoalConfig()
         config.habitat.task.measurements.success.success_distance = 0.25
 
-    generate_trajectories(config, video_dir=args.video_dir, num_episodes=args.num_episodes)
+    generate_trajectories(
+        config, video_dir=args.video_dir, num_episodes=args.num_episodes
+    )
+
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,4 @@
 import argparse
-import copy
 import glob
 import os
 from collections import defaultdict
@@ -7,7 +6,11 @@ from collections import defaultdict
 from ovon.utils.utils import load_dataset, load_json, write_dataset
 
 
-def shuffle_episodes(dataset_path: str, output_path: str, meta_path: str = "data/hm3d_meta/val_splits.json"):
+def shuffle_episodes(
+    dataset_path: str,
+    output_path: str,
+    meta_path: str = "data/hm3d_meta/val_splits.json",
+):
     category_per_splits = load_json(meta_path)
     splits = list(category_per_splits.keys())
     print(splits)
@@ -27,10 +30,10 @@ def shuffle_episodes(dataset_path: str, output_path: str, meta_path: str = "data
         for split in splits:
             path = os.path.join(dataset_path, split, "content", scene_id)
             dataset = load_dataset(path)
-            
+
             for goal_key, goal in dataset["goals_by_category"].items():
                 goals_by_category[goal_key] = goal
-            
+
             for episode in dataset["episodes"]:
                 episodes_by_category[episode["object_category"]].append(episode)
 
@@ -50,7 +53,15 @@ def shuffle_episodes(dataset_path: str, output_path: str, meta_path: str = "data
                     continue
                 dataset["goals_by_category"][g_key] = goals_by_category[g_key]
                 dataset["episodes"].extend(episodes_by_category[key])
-            print("Split: {}, # of goals: {}/{}, # of episodes: {}/{}".format(split, len(dataset["goals_by_category"].keys()), goals_before, len(dataset["episodes"]), episodes_before))
+            print(
+                "Split: {}, # of goals: {}/{}, # of episodes: {}/{}".format(
+                    split,
+                    len(dataset["goals_by_category"].keys()),
+                    goals_before,
+                    len(dataset["episodes"]),
+                    episodes_before,
+                )
+            )
 
             op = os.path.join(output_path, split, "content", scene_id)
             print("Output: {}".format(op))
@@ -70,13 +81,20 @@ def shuffle_episodes(dataset_path: str, output_path: str, meta_path: str = "data
             goals.extend(goal_keys)
 
         diff = set(category_per_splits[split]).difference(set(goals))
-        print("Validating Split: {}, # of goals: {}, # of episodes: {}, Difference: {}".format(split, len(set(goals)), episodes, len(diff)))
+        print(
+            "Validating Split: {}, # of goals: {}, # of episodes: {}, Difference: {}"
+            .format(split, len(set(goals)), episodes, len(diff))
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_path", type=str, default="data/hm3d_meta/val_splits.json")
-    parser.add_argument("--output_path", type=str, default="data/hm3d_meta/val_splits.json")
+    parser.add_argument(
+        "--dataset_path", type=str, default="data/hm3d_meta/val_splits.json"
+    )
+    parser.add_argument(
+        "--output_path", type=str, default="data/hm3d_meta/val_splits.json"
+    )
 
     args = parser.parse_args()
 

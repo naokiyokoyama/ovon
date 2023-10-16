@@ -55,9 +55,7 @@ def plot_embeddings(path, output_path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--path", type=str, required=True, help="path to the dataset"
-    )
+    parser.add_argument("--path", type=str, required=True, help="path to the dataset")
     parser.add_argument(
         "--output-path", type=str, required=True, help="path to the dataset"
     )

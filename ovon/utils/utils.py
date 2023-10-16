@@ -132,9 +132,7 @@ def load_encoder(encoder, path):
     assert os.path.exists(path)
     if isinstance(encoder.backbone, ResNet):
         state_dict = torch.load(path, map_location="cpu")["teacher"]
-        state_dict = {
-            k.replace("module.", ""): v for k, v in state_dict.items()
-        }
+        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
         return encoder.load_state_dict(state_dict=state_dict, strict=False)
     else:
         raise ValueError("unknown encoder backbone")

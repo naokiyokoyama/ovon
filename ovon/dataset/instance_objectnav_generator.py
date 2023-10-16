@@ -3,9 +3,8 @@ import gzip
 import itertools
 import multiprocessing
 import os
-import pickle
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import GPUtil
 import habitat
@@ -14,20 +13,21 @@ import numpy as np
 from habitat.tasks.nav.object_nav_task import ObjectGoalNavEpisode
 from habitat_sim import bindings as hsim
 from habitat_sim._ext.habitat_sim_bindings import SemanticObject
-from habitat_sim.agent.agent import AgentConfiguration, AgentState, SixDOFPose
+from habitat_sim.agent.agent import AgentConfiguration, AgentState
 from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_two_vectors, quat_to_coeffs
 from numpy import ndarray
+
+# from ovon.dataset.visualization import plot_area  # noqa:F401
+# from ovon.dataset.visualization import save_candidate_imgs
+from tqdm import tqdm
+
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import (
     ObjectCategoryMapping,
     SceneRelationshipsMapping,
     get_hm3d_semantic_scenes,
 )
-
-# from ovon.dataset.visualization import plot_area  # noqa:F401
-# from ovon.dataset.visualization import save_candidate_imgs
-from tqdm import tqdm
 
 
 class InstanceObjectGoalGenerator:

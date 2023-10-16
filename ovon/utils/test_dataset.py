@@ -16,7 +16,7 @@ def test_dataset(path):
         if len(ep["children_object_categories"]) > 0:
             print("Found episode with children object categories")
             break
-    
+
     print("Object goal: {}".format(ep["object_category"]))
     for children in ep["children_object_categories"]:
         print(children)
@@ -27,7 +27,11 @@ def test_dataset(path):
         if goal_key not in dataset["goals_by_category"]:
             print("No valid viewpoints for child: {}".format(children))
             continue
-        print("Viewpoints: {} for child: {}".format(len(dataset["goals_by_category"][goal_key]), children))
+        print(
+            "Viewpoints: {} for child: {}".format(
+                len(dataset["goals_by_category"][goal_key]), children
+            )
+        )
 
 
 if __name__ == "__main__":
@@ -36,4 +40,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     test_dataset(args.path)
-

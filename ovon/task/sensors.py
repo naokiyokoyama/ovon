@@ -51,9 +51,7 @@ class ClipObjectGoalSensor(Sensor):
         return SensorTypes.SEMANTIC
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return spaces.Box(
-            low=-np.inf, high=np.inf, shape=(1024,), dtype=np.float32
-        )
+        return spaces.Box(low=-np.inf, high=np.inf, shape=(1024,), dtype=np.float32)
 
     def get_observation(
         self,
@@ -63,9 +61,7 @@ class ClipObjectGoalSensor(Sensor):
         **kwargs: Any,
     ) -> Optional[int]:
         category = (
-            episode.object_category
-            if hasattr(episode, "object_category")
-            else ""
+            episode.object_category if hasattr(episode, "object_category") else ""
         )
         if category not in self.cache:
             print("Missing category: {}".format(category))
@@ -86,9 +82,7 @@ class ClipImageGoalSensor(Sensor):
         self._sim = sim
         sensors = self._sim.sensor_suite.sensors
         rgb_sensor_uuids = [
-            uuid
-            for uuid, sensor in sensors.items()
-            if isinstance(sensor, RGBSensor)
+            uuid for uuid, sensor in sensors.items() if isinstance(sensor, RGBSensor)
         ]
         if len(rgb_sensor_uuids) != 1:
             raise ValueError(
@@ -107,9 +101,7 @@ class ClipImageGoalSensor(Sensor):
         return SensorTypes.COLOR
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return self._sim.sensor_suite.observation_spaces.spaces[
-            self._rgb_sensor_uuid
-        ]
+        return self._sim.sensor_suite.observation_spaces.spaces[self._rgb_sensor_uuid]
 
     def _reset(self, episode):
         self._curr_ep_id = episode.episode_id
@@ -195,15 +187,11 @@ class ImageGoalRotationSensor(Sensor):
     """
     cls_uuid: str = "image_goal_rotation"
 
-    def __init__(
-        self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any
-    ):
+    def __init__(self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any):
         self._sim = sim
         sensors = self._sim.sensor_suite.sensors
         rgb_sensor_uuids = [
-            uuid
-            for uuid, sensor in sensors.items()
-            if isinstance(sensor, RGBSensor)
+            uuid for uuid, sensor in sensors.items() if isinstance(sensor, RGBSensor)
         ]
         if len(rgb_sensor_uuids) != 1:
             raise ValueError(
@@ -223,9 +211,7 @@ class ImageGoalRotationSensor(Sensor):
         return SensorTypes.PATH
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return self._sim.sensor_suite.observation_spaces.spaces[
-            self._rgb_sensor_uuid
-        ]
+        return self._sim.sensor_suite.observation_spaces.spaces[self._rgb_sensor_uuid]
 
     def _get_pointnav_episode_image_goal(self, episode: NavigationEpisode):
         goal_position = np.array(episode.goals[0].position, dtype=np.float32)
@@ -258,9 +244,7 @@ class ImageGoalRotationSensor(Sensor):
         if episode_uniq_id == self._current_episode_id:
             return self._current_image_goal
 
-        self._current_image_goal = self._get_pointnav_episode_image_goal(
-            episode
-        )
+        self._current_image_goal = self._get_pointnav_episode_image_goal(episode)
         self._current_episode_id = episode_uniq_id
 
         return self._current_image_goal
@@ -275,9 +259,7 @@ class CurrentEpisodeUUIDSensor(Sensor):
     """
     cls_uuid: str = "current_episode_uuid"
 
-    def __init__(
-        self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any
-    ):
+    def __init__(self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any):
         self._sim = sim
         self._current_episode_id: Optional[str] = None
 
@@ -306,7 +288,6 @@ class CurrentEpisodeUUIDSensor(Sensor):
     ):
         episode_uniq_id = f"{episode.scene_id} {episode.episode_id}"
         episode_uuid = (
-            int(hashlib.sha1(episode_uniq_id.encode("utf-8")).hexdigest(), 16)
-            % 10**8
+            int(hashlib.sha1(episode_uniq_id.encode("utf-8")).hexdigest(), 16) % 10**8
         )
         return episode_uuid

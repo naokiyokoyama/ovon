@@ -1,5 +1,4 @@
 import csv
-import json
 import os
 import pickle
 from collections import defaultdict
@@ -103,7 +102,8 @@ class ObjectCategoryMapping(MutableMapping):
                 mapping[raw_name] = raw_cat_name
 
         print(
-            "Post filtering stats - Threshold filtering: {}, Ignore category: {}, Final: {}".format(
+            "Post filtering stats - Threshold filtering: {}, Ignore category: {},"
+            " Final: {}".format(
                 threshold_filtering, attr_filtering, len(mapping.keys())
             )
         )
@@ -117,9 +117,7 @@ class ObjectCategoryMapping(MutableMapping):
         blacklist_file: Optional[str] = None,
     ) -> Dict[str, str]:
         if blacklist_file is not None:
-            blacklist = [
-                line.strip() for line in open(blacklist_file, "r").readlines()
-            ]
+            blacklist = [line.strip() for line in open(blacklist_file, "r").readlines()]
             mapping = {k: v for k, v in mapping.items() if k not in blacklist}
 
         if allowed_categories is None:
@@ -153,7 +151,6 @@ class ObjectCategoryMapping(MutableMapping):
 
 
 class WordnetMapping(MutableMapping):
-
     _mapping: Dict[str, str]
 
     def __init__(
@@ -167,9 +164,7 @@ class WordnetMapping(MutableMapping):
         )
 
     @staticmethod
-    def load_categories(
-        mapping_file: str
-    ) -> Dict[str, str]:
+    def load_categories(mapping_file: str) -> Dict[str, str]:
         if mapping_file is None:
             return {}
         wordnet_mapping = load_json(mapping_file)
@@ -227,9 +222,7 @@ class SceneRelationshipsMapping(MutableMapping):
         new_mapping = {}
         for scene in mapping.keys():
             new_mapping[scene] = {
-                reln["name"]: [
-                    i for i in mapping[scene] if i["name"] == reln["name"]
-                ]
+                reln["name"]: [i for i in mapping[scene] if i["name"] == reln["name"]]
                 for reln in mapping[scene]
             }
 
@@ -270,9 +263,7 @@ def get_hm3d_semantic_scenes(
     semantic_scenes = {}  # split -> scene file path
     for split in splits:
         split_dir = os.path.join(hm3d_dataset_dir, split)
-        all_scenes = [
-            os.path.join(split_dir, s) for s in os.listdir(split_dir)
-        ]
+        all_scenes = [os.path.join(split_dir, s) for s in os.listdir(split_dir)]
         all_scenes = [s for s in all_scenes if include_scene(s)]
         scene_paths = {os.path.join(s, get_basis_file(s)) for s in all_scenes}
         semantic_scenes[split] = scene_paths

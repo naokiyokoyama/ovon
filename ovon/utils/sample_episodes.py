@@ -7,13 +7,12 @@ from collections import defaultdict
 
 from tqdm import tqdm
 
-from ovon.utils.utils import (count_episodes, load_dataset, load_json,
-                              write_dataset)
+from ovon.utils.utils import count_episodes, load_dataset, load_json, write_dataset
 
 
 def sample_val(input_path, output_path, max_episodes):
     files = glob.glob(osp.join(input_path, "*.json.gz"))
-    num_gz_files = len(files)
+    len(files)
 
     count, categories = count_episodes(input_path)
     print("Total episodes: {}".format(count))
@@ -33,11 +32,11 @@ def sample_val(input_path, output_path, max_episodes):
     for category, episodes in episodes_per_category.items():
         random.shuffle(episodes)
         episodes_per_category[category] = episodes[:max_epsiodes_per_category]
-        sampled_buffer.extend(episodes[max_epsiodes_per_category + 1:])
+        sampled_buffer.extend(episodes[max_epsiodes_per_category + 1 :])
         total_episodes += len(episodes_per_category[category])
         for episode in episodes_per_category[category]:
             episodes_per_scene[episode["scene_id"]].append(episode)
-    
+
     if total_episodes != max_episodes:
         missing_episodes = max_episodes - total_episodes
         sampled_episodes = random.sample(sampled_buffer, missing_episodes)
@@ -76,11 +75,15 @@ def sample_custom(input_path, output_path, episode_meta_file):
         episodes_by_category = defaultdict(list)
         for episode in dataset["episodes"]:
             episodes_by_category[episode["object_category"]].append(episode)
-        
+
         dataset["episodes"] = []
         for category in episode_meta[scene_id]:
-            min_episodes = min(episode_meta[scene_id][category], len(episodes_by_category[category]))
-            sampled_episodes = random.sample(episodes_by_category[category], min_episodes)
+            min_episodes = min(
+                episode_meta[scene_id][category], len(episodes_by_category[category])
+            )
+            sampled_episodes = random.sample(
+                episodes_by_category[category], min_episodes
+            )
             if min_episodes < episode_meta[scene_id][category]:
                 print(f"Warning: not enough episodes for {scene_id} {category}!")
             dataset["episodes"].extend(sampled_episodes)

@@ -1,5 +1,5 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
 from vc_models.models.vit import model_utils
 
 from ovon.obs_transformers.resize import image_resize

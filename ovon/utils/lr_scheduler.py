@@ -76,9 +76,7 @@ class PIRLNavLRScheduler:
                 )
             )
 
-            logger.info(
-                "\n\nStart actor finetuning at: {}".format(self.update)
-            )
+            logger.info("\n\nStart actor finetuning at: {}".format(self.update))
 
             start_index = 1
             for i, param_group in enumerate(
@@ -86,7 +84,7 @@ class PIRLNavLRScheduler:
             ):
                 param_group["eps"] = self.ppo_eps
                 self.base_lrs[i + start_index] = 1.0
-            
+
             logger.info("Base LRs: {}".format(self.base_lrs))
 
         if self.update == self.start_critic_warmup_at:

@@ -130,9 +130,7 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
 
         return g
 
-    def from_json(
-        self, json_str: str, scenes_dir: Optional[str] = None
-    ) -> None:
+    def from_json(self, json_str: str, scenes_dir: Optional[str] = None) -> None:
         deserialized = json.loads(json_str)
         if CONTENT_SCENES_PATH_FIELD in deserialized:
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
@@ -194,9 +192,7 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
             if episode.reference_replay is not None:
                 for i, replay_step in enumerate(episode.reference_replay):
                     replay_step["agent_state"] = None
-                    episode.reference_replay[i] = ReplayActionSpec(
-                        **replay_step
-                    )
+                    episode.reference_replay[i] = ReplayActionSpec(**replay_step)
 
             if episode.shortest_paths is not None:
                 for path in episode.shortest_paths:

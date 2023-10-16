@@ -46,4 +46,4 @@ srun python -um ovon.run \
   habitat.task.measurements.success.success_distance=0.25 \
   habitat.dataset.type="OVON-v1" \
   habitat.task.measurements.distance_to_goal.type=OVONDistanceToGoal \
-  habitat.simulator.type="OVONSim-v0" 
+  habitat.simulator.type="OVONSim-v0"

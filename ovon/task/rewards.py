@@ -16,9 +16,7 @@ if TYPE_CHECKING:
 class ImageNavReward(Measure):
     cls_uuid: str = "imagenav_reward"
 
-    def __init__(
-        self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any
-    ):
+    def __init__(self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any):
         super().__init__(**kwargs)
         self._sim = sim
         self._config = config
@@ -76,9 +74,7 @@ class ImageNavReward(Measure):
         self._previous_atg = atg
 
         # angle success reward
-        angle_success = task.measurements.measures[
-            AngleSuccess.cls_uuid
-        ].get_metric()
+        angle_success = task.measurements.measures[AngleSuccess.cls_uuid].get_metric()
         angle_success_reward = (
             self._config.angle_success_reward if angle_success else 0.0
         )

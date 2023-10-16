@@ -64,7 +64,8 @@ def build_config_src_dest_dict(
     }
     if (len(config_json_dict)) == 0:
         print(
-            f"build_config_src_dest_dict( config_src_dir : {config_src_dir}, config_dest_dir : {config_dest_dir}) : No files found/mapped!"
+            f"build_config_src_dest_dict( config_src_dir : {config_src_dir},"
+            f" config_dest_dir : {config_dest_dir}) : No files found/mapped!"
         )
     if debug:
         for k, v in config_json_dict.items():
@@ -107,9 +108,9 @@ def mod_config_paths_rel_dest(
             old_file_name = json_data[tag]
             abs_old_file = os.path.normpath(os.path.join(asset_base_dir, old_file_name))
             base_string = (
-                f"Attempting to modify {src_file} config to have asset relative filepath "
-                f'"{old_file_name}" changed to absolute "{abs_old_file}" (with config '
-                f"moved to Dest dir {dest_dir}) and this filepath"
+                f"Attempting to modify {src_file} config to have asset relative"
+                f' filepath "{old_file_name}" changed to absolute "{abs_old_file}"'
+                f" (with config moved to Dest dir {dest_dir}) and this filepath"
             )
             if os.path.isfile(abs_old_file):
                 new_file_name = os.path.relpath(abs_old_file, start=dest_dir)
@@ -141,7 +142,8 @@ def load_json_into_dict(filename: str) -> Dict[str, Any]:
     file_list = glob(os.path.join("**", filename), recursive=True)
     if len(file_list) == 0:
         print(
-            f"JSON File {filename} not found, so no configuration data loaded. Aborting. "
+            f"JSON File {filename} not found, so no configuration data loaded."
+            " Aborting. "
         )
         return {}
     src_file = file_list[0]
@@ -206,7 +208,7 @@ def mod_json_val_and_save(
         save_json_to_file(json_data, dest_file, indent)
     else:
         print(
-            f"mod_json_val_and_save (dry run) : JSON data to be written :"
+            "mod_json_val_and_save (dry run) : JSON data to be written :"
             f"\n{json_data}\n to file named : {dest_file}"
         )
 
@@ -279,11 +281,13 @@ def get_files_matching_regex(
                     res_list.append((path, dirnames, fname))
                 elif debug:
                     print(
-                        f"get_files_matching_regex : {fname} not match regex {regex_str}"
+                        f"get_files_matching_regex : {fname} not match regex"
+                        f" {regex_str}"
                     )
     if debug:
         print(
-            f"get_files_matching_regex : Found and matched {len(res_list)} of {found_count} files in {src_dir}"
+            f"get_files_matching_regex : Found and matched {len(res_list)} of"
+            f" {found_count} files in {src_dir}"
         )
     return res_list
 
@@ -317,10 +321,12 @@ def get_directories_matching_regex(
                     res_list.append((path, dirname))
                 elif debug:
                     print(
-                        f"get_directories_matching_regex : {dirname} not match regex {regex_str}"
+                        f"get_directories_matching_regex : {dirname} not match regex"
+                        f" {regex_str}"
                     )
     if debug:
         print(
-            f"get_directories_matching_regex : Found and matched {len(res_list)} of {found_count} directories in {src_dir}"
+            f"get_directories_matching_regex : Found and matched {len(res_list)} of"
+            f" {found_count} directories in {src_dir}"
         )
     return res_list

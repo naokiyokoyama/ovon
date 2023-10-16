@@ -6,7 +6,6 @@ from gym import spaces
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.ddppo.policy.resnet import resnet18
 from habitat_baselines.rl.models.rnn_state_encoder import (
     build_rnn_state_encoder,
 )
@@ -33,12 +32,8 @@ class ObjaverseCLIPPolicy(NetPolicy):
         **kwargs,
     ):
         if policy_config is not None:
-            discrete_actions = (
-                policy_config.action_distribution_type == "categorical"
-            )
-            self.action_distribution_type = (
-                policy_config.action_distribution_type
-            )
+            discrete_actions = policy_config.action_distribution_type == "categorical"
+            self.action_distribution_type = policy_config.action_distribution_type
         else:
             discrete_actions = True
             self.action_distribution_type = "categorical"
@@ -76,11 +71,7 @@ class ObjaverseCLIPPolicy(NetPolicy):
             )
         filtered_obs = spaces.Dict(
             OrderedDict(
-                (
-                    (k, v)
-                    for k, v in observation_space.items()
-                    if k not in ignore_names
-                )
+                ((k, v) for k, v in observation_space.items() if k not in ignore_names)
             )
         )
         try:
@@ -130,9 +121,7 @@ class ObjaverseCLIPNet(Net):
             )
         else:
             num_actions = get_num_actions(action_space)
-            self.prev_action_embedding = nn.Linear(
-                num_actions, self._n_prev_action
-            )
+            self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
         rnn_input_size = self._n_prev_action  # test
         rnn_input_size_info = {"prev_action": self._n_prev_action}
 
@@ -173,24 +162,19 @@ class ObjaverseCLIPNet(Net):
         print("Obs space: {}".format(observation_space.spaces))
 
         clip_embedding = 1024 if clip_model == "RN50" else 768
-        self.goal_compressor = nn.Linear(
-            clip_embedding, self.goal_compressor_out_dims
-        )
+        self.goal_compressor = nn.Linear(clip_embedding, self.goal_compressor_out_dims)
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
-            input_gps_dim = observation_space.spaces[
-                EpisodicGPSSensor.cls_uuid
-            ].shape[0]
+            input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
+                0
+            ]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
             rnn_input_size_info["gps_embedding"] = 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
-                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[
-                    0
-                ]
-                == 1
+                observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[0] == 1
             ), "Expected compass with 2D rotation."
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
@@ -290,14 +274,10 @@ class ObjaverseCLIPNet(Net):
                 ],
                 -1,
             )
-            x.append(
-                self.compass_embedding(compass_observations.squeeze(dim=1))
-            )
+            x.append(self.compass_embedding(compass_observations.squeeze(dim=1)))
 
         if EpisodicGPSSensor.cls_uuid in observations:
-            x.append(
-                self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid])
-            )
+            x.append(self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid]))
 
         prev_actions = prev_actions.squeeze(-1)
         start_token = torch.zeros_like(prev_actions)

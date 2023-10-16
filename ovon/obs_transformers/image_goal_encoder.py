@@ -62,12 +62,8 @@ class CLIPImageGoalEncoder(ObservationTransformer):
         self._episode_embeddings = {}
         self._episode_step_counter = {}
 
-    def transform_observation_space(
-        self, observation_space: spaces.Dict, **kwargs
-    ):
-        assert (
-            "rgb" in observation_space.spaces
-        ), f"CLIP needs rgb observation!"
+    def transform_observation_space(self, observation_space: spaces.Dict, **kwargs):
+        assert "rgb" in observation_space.spaces, "CLIP needs rgb observation!"
         observation_space.spaces[ClipImageGoalSensor.cls_uuid] = spaces.Box(
             low=np.finfo(np.float32).min,
             high=np.finfo(np.float32).max,
@@ -84,9 +80,7 @@ class CLIPImageGoalEncoder(ObservationTransformer):
             inference_worker_idx=config.inference_worker_idx,
         )
 
-    def forward(
-        self, observations: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, observations: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         clip_image_goal = None
 
         clip_image_goals = []
@@ -99,9 +93,7 @@ class CLIPImageGoalEncoder(ObservationTransformer):
             episode_id = episode_id.item()
             self._episodes[episode_id] = 1
             if episode_id not in self._episode_embeddings:
-                obs_batch.append(
-                    observations[ClipImageGoalSensor.cls_uuid][idx]
-                )
+                obs_batch.append(observations[ClipImageGoalSensor.cls_uuid][idx])
                 episode_ids.append(episode_id)
             all_eps.append(episode_id)
 

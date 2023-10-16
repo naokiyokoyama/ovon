@@ -1,2 +1,1 @@
 # Open Vocabulary Object Navigation
-

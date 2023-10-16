@@ -32,9 +32,7 @@ class VisualEncoder(nn.Module):
         self.num_environments = num_environments
 
         if normalize_visual_inputs:
-            self.running_mean_and_var: nn.Module = RunningMeanAndVar(
-                input_channels
-            )
+            self.running_mean_and_var: nn.Module = RunningMeanAndVar(input_channels)
         else:
             self.running_mean_and_var = nn.Sequential()
 
@@ -48,9 +46,7 @@ class VisualEncoder(nn.Module):
             if self.avgpooled_image:
                 spatial_size = image_size // 2
 
-            final_spatial = int(
-                spatial_size * self.backbone.final_spatial_compress
-            )
+            final_spatial = int(spatial_size * self.backbone.final_spatial_compress)
             after_compression_flat_size = 2048
             num_compression_channels = int(
                 round(after_compression_flat_size / (final_spatial**2))

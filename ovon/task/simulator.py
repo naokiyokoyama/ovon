@@ -22,7 +22,9 @@ class OVONSim(HabitatSim):
         navmesh_settings.set_defaults()
         navmesh_settings.agent_height = agent_cfg.height
         navmesh_settings.agent_radius = agent_cfg.radius
-        navmesh_settings.agent_max_climb = self.habitat_config.navmesh_settings.agent_max_climb
+        navmesh_settings.agent_max_climb = (
+            self.habitat_config.navmesh_settings.agent_max_climb
+        )
         navmesh_settings.cell_height = self.habitat_config.navmesh_settings.cell_height
         return navmesh_settings
 

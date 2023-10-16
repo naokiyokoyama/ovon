@@ -7,6 +7,7 @@ from habitat_sim._ext.habitat_sim_bindings import SemanticObject
 from habitat_sim.agent.agent import AgentConfiguration, AgentState
 from habitat_sim.simulator import Simulator
 from numpy import ndarray
+
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import ObjectCategoryMapping
 from ovon.dataset.visualization import save_candidate_imgs
@@ -20,7 +21,7 @@ def config_sim(
     hfov: float,
     agent_height: float,
     agent_radius: float,
-    device_id: int
+    device_id: int,
 ) -> Simulator:
     sim_cfg = hsim.SimulatorConfiguration()
     sim_cfg.enable_physics = False
@@ -179,7 +180,9 @@ if __name__ == "__main__":
     hfov = 79
 
     hm3d_to_cat = ObjectCategoryMapping(
-        mapping_file="ovon/dataset/source_data/Mp3d_category_mapping_fixed_taxonomy.tsv",
+        mapping_file=(
+            "ovon/dataset/source_data/Mp3d_category_mapping_fixed_taxonomy.tsv"
+        ),
         allowed_categories={
             "chair",
             "bed",
@@ -191,8 +194,12 @@ if __name__ == "__main__":
     )
 
     sim = config_sim(
-        scene_filepath="data/scene_datasets/hm3d/val/00802-wcojb4TFT35/wcojb4TFT35.basis.glb",
-        semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
+        scene_filepath=(
+            "data/scene_datasets/hm3d/val/00802-wcojb4TFT35/wcojb4TFT35.basis.glb"
+        ),
+        semantic_spec_filepath=(
+            "data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
+        ),
         img_size=(512, 512),
         sensor_height=0.88,  # can be overridden by PoseSampler h_{min,max}
         hfov=hfov,

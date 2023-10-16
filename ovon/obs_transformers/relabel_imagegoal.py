@@ -12,30 +12,26 @@ from habitat_baselines.config.default_structured_configs import (
 from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
 
-from ovon.task.sensors import ImageGoalRotationSensor, ClipImageGoalSensor
+from ovon.task.sensors import ClipImageGoalSensor, ImageGoalRotationSensor
 
 
 @baseline_registry.register_obs_transformer()
 class RelabelImageGoal(ObservationTransformer):
     """Renames ImageGoalRotationSensor to ClipImageGoalSensor"""
 
-    def transform_observation_space(
-        self, observation_space: spaces.Dict, **kwargs
-    ):
+    def transform_observation_space(self, observation_space: spaces.Dict, **kwargs):
         assert ImageGoalRotationSensor.cls_uuid in observation_space.spaces
         observation_space = copy.deepcopy(observation_space)
-        observation_space.spaces[
-            ClipImageGoalSensor.cls_uuid
-        ] = observation_space.spaces.pop(ImageGoalRotationSensor.cls_uuid)
+        observation_space.spaces[ClipImageGoalSensor.cls_uuid] = (
+            observation_space.spaces.pop(ImageGoalRotationSensor.cls_uuid)
+        )
         return observation_space
 
     @classmethod
     def from_config(cls, config: DictConfig):
         return cls()
 
-    def forward(
-        self, observations: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, observations: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         observations[ClipImageGoalSensor.cls_uuid] = observations.pop(
             ImageGoalRotationSensor.cls_uuid
         )

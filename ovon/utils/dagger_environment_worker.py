@@ -14,8 +14,8 @@ from typing import (
 
 import attr
 from habitat_baselines.rl.ver.environment_worker import (
-    EnvironmentWorkerProcess,
     EnvironmentWorker,
+    EnvironmentWorkerProcess,
     _create_worker_configs,
 )
 from habitat_baselines.rl.ver.worker_common import WorkerBase, WorkerQueues

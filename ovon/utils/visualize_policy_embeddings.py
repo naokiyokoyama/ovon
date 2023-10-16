@@ -21,16 +21,14 @@ def visualize_policy_embeddings(checkpoint_path, output_path):
         "tv_monitor": 4,
         "sofa": 5,
     }
-    
+
     h, w = (
         480,
         640,
     )
 
     observation_space = {
-        "compass": spaces.Box(
-            low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32
-        ),
+        "compass": spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
         "gps": spaces.Box(
             low=np.finfo(np.float32).min,
             high=np.finfo(np.float32).max,
@@ -52,11 +50,12 @@ def visualize_policy_embeddings(checkpoint_path, output_path):
 
     action_space = spaces.Discrete(6)
 
-    policy = PointNavResNetCLIPPolicy.from_config(checkpoint["config"], observation_space, action_space)
-    policy.load_state_dict({
-        k.replace("actor_critic.", ""): v
-        for k, v in checkpoint["state_dict"].items()
-    })
+    policy = PointNavResNetCLIPPolicy.from_config(
+        checkpoint["config"], observation_space, action_space
+    )
+    policy.load_state_dict(
+        {k.replace("actor_critic.", ""): v for k, v in checkpoint["state_dict"].items()}
+    )
 
     policy.eval()
     print("Policy initialized....")
@@ -65,7 +64,7 @@ def visualize_policy_embeddings(checkpoint_path, output_path):
     for cat, cat_id in OBJECT_MAPPING.items():
         out = policy.net.obj_categories_embedding(torch.tensor(cat_id))
         embeddings[cat] = out.detach().numpy()
-    
+
     save_pickle(embeddings, "data/clip_embeddings/hm3d_onehot.pkl")
     plot_tsne(embeddings, output_path)
 
@@ -73,7 +72,10 @@ def visualize_policy_embeddings(checkpoint_path, output_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--checkpoint", type=str, required=True, help="path to the habitat baselines file"
+        "--checkpoint",
+        type=str,
+        required=True,
+        help="path to the habitat baselines file",
     )
     parser.add_argument(
         "--output-path", type=str, required=True, help="path to the TSNE plot"

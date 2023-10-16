@@ -65,7 +65,8 @@ def main(dataset_path, output_path):
 
     print("Total goal categories: {}".format(len(goal_categories)))
     print(
-        "Train categories: {}, Val seen categories: {}, Val unseen easy categories: {}, Val unseen hard categories: {}".format(
+        "Train categories: {}, Val seen categories: {}, Val unseen easy categories: {},"
+        " Val unseen hard categories: {}".format(
             len(goal_categories),
             len(val_seen_categories),
             len(val_unseen_easy_categories),

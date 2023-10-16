@@ -1,32 +1,29 @@
 import argparse
-import json
-import os
-import os.path as osp
 import multiprocessing
+import os
 import pickle
 import sys
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Tuple
 
-import numpy as np
-import habitat_sim
 import GPUtil
+import habitat_sim
+import numpy as np
 from habitat_sim import bindings as hsim
-from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
-from habitat_sim.agent.agent import Agent, AgentState, AgentConfiguration
+from habitat_sim._ext.habitat_sim_bindings import SemanticObject
+from habitat_sim.agent.agent import Agent, AgentConfiguration
 from habitat_sim.simulator import Simulator
+from scipy.spatial import distance
+from torchvision.transforms import ToPILImage
+from tqdm import tqdm
+
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import (
     ObjectCategoryMapping,
-    get_hm3d_semantic_scenes,
 )
-from ovon.dataset.visualise_objects import get_objnav_config, get_simulator
 from ovon.dataset.visualization import (
     get_best_viewpoint_with_posesampler,
     get_bounding_box,
 )
-from scipy.spatial import distance
-from torchvision.transforms import ToPILImage
-from tqdm import tqdm
 
 
 class PromptGenerator:
@@ -220,7 +217,7 @@ class PromptGenerator:
             }
         </script>
         """
-        cnt = len(relationships)
+        len(relationships)
         html_body = """<body>
             <h2> Visualising {cnt} Relationships </h2>
             """

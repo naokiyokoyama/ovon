@@ -6,8 +6,10 @@ from habitat.core.embodied_task import EmbodiedTask, Measure
 from habitat.core.registry import registry
 from habitat.core.simulator import Simulator
 from habitat.tasks.nav.nav import NavigationEpisode, Success
-from habitat.utils.geometry_utils import (angle_between_quaternions,
-                                          quaternion_from_coeff)
+from habitat.utils.geometry_utils import (
+    angle_between_quaternions,
+    quaternion_from_coeff,
+)
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig

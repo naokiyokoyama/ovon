@@ -1,11 +1,8 @@
 import argparse
-import json
-import os
-import os.path as osp
-import pickle
-from typing import Dict, List, Union
 import multiprocessing
-import openai
+import os
+import pickle
+from typing import Dict, Union
 
 import GPUtil
 import habitat
@@ -16,22 +13,22 @@ from habitat.config.default_structured_configs import (
     HabitatSimSemanticSensorConfig,
 )
 from habitat.config.read_write import read_write
-from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
-from habitat_sim.agent.agent import Agent, AgentState
+from habitat_sim._ext.habitat_sim_bindings import BBox
 from habitat_sim.simulator import Simulator
+from torchvision.transforms import ToPILImage
+from tqdm import tqdm
+
 from ovon.dataset.pose_sampler import PoseSampler
 from ovon.dataset.semantic_utils import (
-    get_hm3d_semantic_scenes,
     ObjectCategoryMapping,
+    get_hm3d_semantic_scenes,
 )
-from ovon.dataset.generate_viewpoints import config_sim
 from ovon.dataset.visualization import (
     get_best_viewpoint_with_posesampler,
     get_bounding_box,
-    get_color, get_depth
+    get_color,
+    get_depth,
 )
-from torchvision.transforms import ToPILImage
-from tqdm import tqdm
 
 SCENES_ROOT = "data/scene_datasets/hm3d"
 NUM_GPUS = len(GPUtil.getAvailable(limit=256))
@@ -97,7 +94,7 @@ def create_html(
     console.log(li_categories)
     localStorage.setItem("categories",li_categories)
     download0()
-    
+
     }
     </script>
     """
@@ -121,7 +118,7 @@ def create_html(
         # Filtered Objects
         elif not visualised and objects_mapping[obj][0][1] < threshold:
             cnt += 1
-            html_body += f"""<h3>{obj}</h3> 
+            html_body += f"""<h3>{obj}</h3>
                             <div class="row">
                             """
             for cov, frac, scene in objects_mapping[obj][:5]:
@@ -365,7 +362,7 @@ def get_objects_for_split(
     multiprocessing_enabled: bool = False,
 ):
     """Makes episodes for all scenes in a split"""
-    
+
     scenes = sorted(
         list(
             get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[

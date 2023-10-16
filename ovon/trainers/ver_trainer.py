@@ -22,12 +22,12 @@ if TYPE_CHECKING:
 
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict
 
 import numpy as np
 import torch
 import tqdm
-from habitat import VectorEnv, logger
+from habitat import logger
 from habitat.config import read_write
 from habitat.config.default import get_agent_config
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
@@ -37,23 +37,31 @@ from habitat.utils.render_wrapper import overlay_frame
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
-    get_active_obs_transforms)
-from habitat_baselines.common.tensorboard_utils import (TensorboardWriter,
-                                                        get_writer)
+    apply_obs_transforms_batch,
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
+from habitat_baselines.common.tensorboard_utils import TensorboardWriter
 from habitat_baselines.rl.ddppo.algo import DDPPO
-from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, get_distrib_size,
-                                                  init_distrib_slurm,
-                                                  is_slurm_batch_job,
-                                                  load_resume_state,
-                                                  rank0_only, requeue_job,
-                                                  save_resume_state)
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    EXIT,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
 from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
-    PointNavResNetNet, PointNavResNetPolicy)
+    PointNavResNetNet,
+    PointNavResNetPolicy,
+)
 from habitat_baselines.rl.ppo import PPO
-from habitat_baselines.utils.common import (batch_obs, generate_video,
-                                            get_num_actions, inference_mode,
-                                            is_continuous_action_space)
+from habitat_baselines.utils.common import (
+    batch_obs,
+    generate_video,
+    get_num_actions,
+    inference_mode,
+    is_continuous_action_space,
+)
 from omegaconf import OmegaConf
 from torch import nn
 
@@ -254,8 +262,9 @@ class VERPIRLNavTrainer(VERTrainer):
 
                 if self._iw_sync.all_workers.n_waiting > 0:
                     raise RuntimeError(
-                        f"{self._iw_sync.all_workers.n_waiting} inference worker(s) is(are) still waiting on the IW barrier. "
-                        "Likely they never waited on it.\n"
+                        f"{self._iw_sync.all_workers.n_waiting} inference worker(s)"
+                        " is(are) still waiting on the IW barrier. Likely they never"
+                        " waited on it.\n"
                     )
 
                 self.rollouts.after_rollout()
@@ -376,7 +385,7 @@ class VERPIRLNavTrainer(VERTrainer):
                 if render_view in agent_sensors
             ]
             assert len(render_view_uuids) > 0, (
-                f"Missing render sensors in agent config: "
+                "Missing render sensors in agent config: "
                 f"{config.habitat_baselines.video_render_views}."
             )
             with read_write(config):
@@ -438,9 +447,9 @@ class VERPIRLNavTrainer(VERTrainer):
             device=self.device,
             dtype=torch.bool,
         )
-        stats_episodes: Dict[
-            Any, Any
-        ] = {}  # dict of dicts that stores stats per episode
+        stats_episodes: Dict[Any, Any] = (
+            {}
+        )  # dict of dicts that stores stats per episode
         ep_eval_count: Dict[Any, int] = defaultdict(lambda: 0)
 
         rgb_frames = [
@@ -620,7 +629,7 @@ class VERPIRLNavTrainer(VERTrainer):
                             "target": target_obj,
                         }
                         ep_json_dict.update(self._extract_scalars_from_info(infos[i]))
-                        
+
                         for key, val in infos[i].items():
                             if FailureModeMeasure.cls_uuid in key:
                                 ep_json_dict[key] = val

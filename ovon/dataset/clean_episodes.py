@@ -21,18 +21,14 @@ def validate_episodes(file_path, output_path):
     output_path = os.path.join(output_path, scene_id)
 
     data = load_dataset(file_path)
-    sim = _config_sim(
-        os.path.join(SCENE_ROOT, data["episodes"][0]["scene_id"])
-    )
+    sim = _config_sim(os.path.join(SCENE_ROOT, data["episodes"][0]["scene_id"]))
     print("Output path: {}".format(output_path))
 
     valid_episodes = []
     for ep in tqdm(data["episodes"]):
         try:
             scene_id = ep["scene_id"]
-            goal_key = "{}_{}".format(
-                scene_id.split("/")[-1], ep["object_category"]
-            )
+            goal_key = "{}_{}".format(scene_id.split("/")[-1], ep["object_category"])
 
             goals = copy.deepcopy(data["goals_by_category"][goal_key])
 
@@ -43,25 +39,18 @@ def validate_episodes(file_path, output_path):
                 goals.extend(data["goals_by_category"][goal_key])
 
             vps = [
-                vp["agent_state"]["position"]
-                for g in goals
-                for vp in g["view_points"]
+                vp["agent_state"]["position"] for g in goals for vp in g["view_points"]
             ]
 
             start_position = np.array(ep["start_position"])
 
             # point should be not be isolated to a small poly island
             ISLAND_RADIUS_LIMIT = 1.5
-            if (
-                sim.pathfinder.island_radius(start_position)
-                < ISLAND_RADIUS_LIMIT
-            ):
+            if sim.pathfinder.island_radius(start_position) < ISLAND_RADIUS_LIMIT:
                 raise RuntimeError
 
             closest_goals = []
-            geo_dist, closest_point = geodesic_distance(
-                sim, start_position, vps
-            )
+            geo_dist, closest_point = geodesic_distance(sim, start_position, vps)
             closest_goals.append((geo_dist, closest_point))
 
             geo_dists, goals_sorted = zip(
@@ -92,9 +81,11 @@ def validate_episodes(file_path, output_path):
                 raise RuntimeError
 
             ep["info"]["geodesic_distance"] = geo_dist
-            ep["info"]["euclidean_distance"] = np.linalg.norm(start_position - closest_pt)
+            ep["info"]["euclidean_distance"] = np.linalg.norm(
+                start_position - closest_pt
+            )
             valid_episodes.append(ep)
-        except Exception as e:
+        except Exception:
             # print("Error in episode: {} - {} - {}".format(ep["object_category"], ep["children_object_categories"], e))
             pass
 
@@ -148,9 +139,7 @@ def _config_sim(scene: str):
         },
     )
 
-    sim = habitat_sim.Simulator(
-        habitat_sim.Configuration(sim_cfg, [agent_cfg])
-    )
+    sim = habitat_sim.Simulator(habitat_sim.Configuration(sim_cfg, [agent_cfg]))
 
     # set the navmesh
     assert sim.pathfinder.is_loaded, "pathfinder is not loaded!"
@@ -172,9 +161,7 @@ def geodesic_distance(sim, position_a, position_b):
     if isinstance(position_b[0], (Sequence, np.ndarray)):
         path.requested_ends = np.array(position_b, dtype=np.float32)
     else:
-        path.requested_ends = np.array(
-            [np.array(position_b, dtype=np.float32)]
-        )
+        path.requested_ends = np.array([np.array(position_b, dtype=np.float32)])
     path.requested_start = np.array(position_a, dtype=np.float32)
     sim.pathfinder.find_path(path)
     end_pt = path.points[-1] if len(path.points) else np.array([])

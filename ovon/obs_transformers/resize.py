@@ -70,9 +70,7 @@ class Resize(ObservationTransformer):
         )
 
     @torch.no_grad()
-    def forward(
-        self, observations: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, observations: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         for sensor in self.trans_keys:
             if sensor in observations:
                 interpolation_mode = "area"
@@ -140,7 +138,10 @@ def image_resize(
 @dataclass
 class ResizeConfig(ObsTransformConfig):
     type: str = Resize.__name__
-    size: Tuple[int, int] = (224, 224,)
+    size: Tuple[int, int] = (
+        224,
+        224,
+    )
     channels_last: bool = True
     trans_keys: Tuple[str, ...] = (
         "rgb",

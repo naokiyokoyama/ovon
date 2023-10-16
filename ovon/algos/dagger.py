@@ -52,7 +52,6 @@ class DAgger(PPO):
         entropy_target_factor: float = 0.0,
         use_adaptive_entropy_pen: bool = False,
     ) -> None:
-
         nn.Module.__init__(self)
 
         self.actor_critic = actor_critic
@@ -121,7 +120,6 @@ class DAgger(PPO):
         ]
 
     def update(self, rollouts: RolloutStorage) -> Dict[str, float]:
-
         learner_metrics = collections.defaultdict(list)
 
         def record_min_mean_max(t: torch.Tensor, prefix: str):
@@ -134,9 +132,7 @@ class DAgger(PPO):
 
         for epoch in range(self.ppo_epoch):
             profiling_wrapper.range_push("DAgger.update epoch")
-            data_generator = rollouts.recurrent_generator(
-                None, self.num_mini_batch
-            )
+            data_generator = rollouts.recurrent_generator(None, self.num_mini_batch)
 
             for _bid, batch in enumerate(data_generator):
                 self._set_grads_to_none()
@@ -171,7 +167,10 @@ class DAgger(PPO):
                 if "is_coeffs" in batch:
                     assert isinstance(batch["is_coeffs"], torch.Tensor)
                     ver_is_coeffs = batch["is_coeffs"].clamp(max=1.0)
-                    mean_fn = lambda t: torch.mean(ver_is_coeffs * t)
+
+                    def mean_fn(t):
+                        return torch.mean(ver_is_coeffs * t)
+
                 else:
                     mean_fn = torch.mean
 
@@ -186,9 +185,7 @@ class DAgger(PPO):
 
                 with inference_mode():
                     if "is_coeffs" in batch:
-                        record_min_mean_max(
-                            batch["is_coeffs"], "ver_is_coeffs"
-                        )
+                        record_min_mean_max(batch["is_coeffs"], "ver_is_coeffs")
                     learner_metrics["loss"].append(loss)
                     learner_metrics["grad_norm"].append(grad_norm)
 
@@ -199,9 +196,7 @@ class DAgger(PPO):
                         )
 
                     if isinstance(rollouts, VERRolloutStorage):
-                        assert isinstance(
-                            batch["policy_version"], torch.Tensor
-                        )
+                        assert isinstance(batch["policy_version"], torch.Tensor)
                         record_min_mean_max(
                             (
                                 rollouts.current_policy_version
@@ -262,9 +257,7 @@ class DAggerPolicyMixin:
     ):
         """Skips computing values and action_log_probs, which are RL-only."""
         if not hasattr(self, "action_distribution"):
-            return super().act(
-                observations, rnn_hidden_states, prev_actions, masks
-            )
+            return super().act(observations, rnn_hidden_states, prev_actions, masks)
 
         features, rnn_hidden_states, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks

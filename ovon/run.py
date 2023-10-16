@@ -55,8 +55,7 @@ def main():
         "--debug-datapath",
         "-p",
         action="store_true",
-        help="Uses faster-to-load $OVON_DEBUG_DATAPATH episode dataset for "
-        "debugging.",
+        help="Uses faster-to-load $OVON_DEBUG_DATAPATH episode dataset for debugging.",
     )
     parser.add_argument(
         "--blind",
@@ -68,9 +67,11 @@ def main():
         "--checkpoint-config",
         "-c",
         action="store_true",
-        help="If set, checkpoint's config will be used, but overrides WILL be "
-        "applied. Does nothing when training; meant for using ckpt config + "
-        "overrides for eval.",
+        help=(
+            "If set, checkpoint's config will be used, but overrides WILL be "
+            "applied. Does nothing when training; meant for using ckpt config + "
+            "overrides for eval."
+        ),
     )
     parser.add_argument(
         "--text-goals",
@@ -120,9 +121,7 @@ def merge_config(config, opts):
     checkpoint_path = config.habitat_baselines.eval_ckpt_path_dir
     if osp.isdir(checkpoint_path):
         ckpt_files = glob.glob(osp.join(checkpoint_path, "*.pth"))
-        assert (
-            len(ckpt_files) > 0
-        ), f"No checkpoints found in {checkpoint_path}!"
+        assert len(ckpt_files) > 0, f"No checkpoints found in {checkpoint_path}!"
         checkpoint_path = ckpt_files[0]
     elif not osp.isfile(checkpoint_path):
         raise ValueError(f"Checkpoint path {checkpoint_path} is not a file!")
@@ -152,14 +151,12 @@ def merge_config(config, opts):
 def edit_config(config, args):
     if args.debug:
         assert osp.isdir(os.environ["JUNK"]), (
-            f"Environment variable directory $JUNK does not exist "
+            "Environment variable directory $JUNK does not exist "
             f"(Current value: {os.environ['JUNK']})"
         )
 
         # Remove resume state in junk if training, so we don't resume from it
-        resume_state_path = osp.join(
-            os.environ["JUNK"], ".habitat-resume-state.pth"
-        )
+        resume_state_path = osp.join(os.environ["JUNK"], ".habitat-resume-state.pth")
         if args.run_type == "train" and osp.isfile(resume_state_path):
             print(
                 "Removing junk resume state file:",
@@ -170,9 +167,7 @@ def edit_config(config, args):
         config.habitat_baselines.tensorboard_dir = os.environ["JUNK"]
         config.habitat_baselines.video_dir = os.environ["JUNK"]
         config.habitat_baselines.checkpoint_folder = os.environ["JUNK"]
-        config.habitat_baselines.log_file = osp.join(
-            os.environ["JUNK"], "junk.log"
-        )
+        config.habitat_baselines.log_file = osp.join(os.environ["JUNK"], "junk.log")
         config.habitat_baselines.load_resume_state_config = False
 
     if args.debug_datapath:
@@ -188,8 +183,9 @@ def edit_config(config, args):
         for k in ["depth_sensor", "rgb_sensor"]:
             if k in config.habitat.simulator.agents.main_agent.sim_sensors:
                 config.habitat.simulator.agents.main_agent.sim_sensors.pop(k)
-        from habitat.config.default_structured_configs import \
-            HabitatSimDepthSensorConfig
+        from habitat.config.default_structured_configs import (
+            HabitatSimDepthSensorConfig,
+        )
 
         # Camera required to load in a scene; use dummy 1x1 depth camera
         config.habitat.simulator.agents.main_agent.sim_sensors.update(
@@ -199,8 +195,9 @@ def edit_config(config, args):
             config.habitat_baselines.rl.policy.obs_transforms = {}
 
     if args.eval_analysis:
-        from habitat.config.default_structured_configs import \
-            HabitatSimSemanticSensorConfig
+        from habitat.config.default_structured_configs import (
+            HabitatSimSemanticSensorConfig,
+        )
 
         # Camera required to load in a scene; use dummy 1x1 depth camera
         config.habitat.simulator.agents.main_agent.sim_sensors.update(
@@ -213,13 +210,9 @@ def edit_config(config, args):
         and hasattr(config.habitat.task.lab_sensors, "clip_imagegoal_sensor")
     ):
         config.habitat.task.lab_sensors.pop("clip_imagegoal_sensor")
-        if hasattr(
-            config.habitat.task.lab_sensors, "clip_goal_selector_sensor"
-        ):
+        if hasattr(config.habitat.task.lab_sensors, "clip_goal_selector_sensor"):
             config.habitat.task.lab_sensors.pop("clip_goal_selector_sensor")
-        if not hasattr(
-            config.habitat.task.lab_sensors, "clip_objectgoal_sensor"
-        ):
+        if not hasattr(config.habitat.task.lab_sensors, "clip_objectgoal_sensor"):
             config.habitat.task.lab_sensors.update(
                 {"clip_objectgoal_sensor": ClipObjectGoalSensorConfig()}
             )

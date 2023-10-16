@@ -21,15 +21,11 @@ class OVONDistanceToGoal(Measure):
 
     cls_uuid: str = "distance_to_goal"
 
-    def __init__(
-        self, sim: Simulator, config: "DictConfig", *args: Any, **kwargs: Any
-    ):
+    def __init__(self, sim: Simulator, config: "DictConfig", *args: Any, **kwargs: Any):
         self._previous_position: Optional[Tuple[float, float, float]] = None
         self._sim = sim
         self._config = config
-        self._episode_view_points: Optional[
-            List[Tuple[float, float, float]]
-        ] = None
+        self._episode_view_points: Optional[List[Tuple[float, float, float]]] = None
 
         super().__init__(**kwargs)
 
@@ -48,9 +44,7 @@ class OVONDistanceToGoal(Measure):
             ]
 
             if episode.children_object_categories is not None:
-                for (
-                    children_category
-                ) in episode.children_object_categories:
+                for children_category in episode.children_object_categories:
                     scene_id = episode.scene_id.split("/")[-1]
                     goal_key = f"{scene_id}_{children_category}"
 
@@ -60,9 +54,7 @@ class OVONDistanceToGoal(Measure):
                     self._episode_view_points.extend(
                         [
                             vp.agent_state.position
-                            for goal in task._dataset.goals_by_category[
-                                goal_key
-                            ]
+                            for goal in task._dataset.goals_by_category[goal_key]
                             for vp in goal.view_points
                         ]
                     )
@@ -139,9 +131,7 @@ class FailureModeMeasure(Measure):
 
     cls_uuid: str = "failure_modes"
 
-    def __init__(
-        self, config: "DictConfig", *args: Any, **kwargs: Any
-    ):
+    def __init__(self, config: "DictConfig", *args: Any, **kwargs: Any):
         self._config = config
         self._goal_seen = False
         self._elapsed_steps = 0
@@ -149,7 +139,7 @@ class FailureModeMeasure(Measure):
         self.cat_map = ObjectCategoryMapping(
             config.mapping_file,
             coverage_meta_file="data/coverage_meta/train.pkl",
-            frame_coverage_threshold=0.05
+            frame_coverage_threshold=0.05,
         )
         super().__init__()
 
@@ -166,7 +156,7 @@ class FailureModeMeasure(Measure):
         self._reached_within_success_area = False
         self.set_goal_positions(task)
         self.update_metric(episode=episode, task=task, observations=observations, *args, **kwargs)  # type: ignore
-    
+
     def set_goal_positions(self, task):
         sim = task._sim
         categories = self._ovon_categories["train"]
@@ -177,8 +167,12 @@ class FailureModeMeasure(Measure):
             relabelled_category = self.cat_map[obj.category.name()]
             if relabelled_category is not None and relabelled_category in categories:
                 category_to_positions[obj.category.name()].append(obj.aabb.center)
-        print("Total categories: {} - {}".format(len(category_to_positions), len(semantic_scene.objects)))
-        
+        print(
+            "Total categories: {} - {}".format(
+                len(category_to_positions), len(semantic_scene.objects)
+            )
+        )
+
         self.category_to_positions = category_to_positions
 
     def visible_goal_area(self, observations, episode, task):
@@ -194,7 +188,7 @@ class FailureModeMeasure(Measure):
         mask = np.zeros_like(semantic_observation)
         for obj in objs:
             mask += (semantic_observation == obj.semantic_id).astype(np.int32)
-        area = np.sum(mask) /  np.prod(semantic_observation.shape)
+        area = np.sum(mask) / np.prod(semantic_observation.shape)
         return area
 
     def _euclidean_distance(self, position_a, position_b):
@@ -227,7 +221,7 @@ class FailureModeMeasure(Measure):
         }
 
         scene_id = episode.scene_id.split("/")[-1]
-        object_keys = [k for k in task._dataset.goals_by_category.keys() if k.startswith(scene_id)]
+        [k for k in task._dataset.goals_by_category.keys() if k.startswith(scene_id)]
         current_position = task._sim.get_agent_state().position
 
         nearest_object = ""
@@ -236,7 +230,12 @@ class FailureModeMeasure(Measure):
         for object_key, positions in self.category_to_positions.items():
             # goals = task._dataset.goals_by_category[object_key]
             # distance = min([self._euclidean_distance(current_position, goal.position) for goal in goals])
-            distance = min([self._euclidean_distance(current_position, position) for position in positions])
+            distance = min(
+                [
+                    self._euclidean_distance(current_position, position)
+                    for position in positions
+                ]
+            )
             if distance < 2.0 and nearest_object_distance > distance:
                 nearest_object = object_key.split("_")[-1]
                 nearest_object_distance = distance

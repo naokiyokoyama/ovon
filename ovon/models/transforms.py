@@ -39,9 +39,7 @@ class RandomShiftsAug(nn.Module):
         shift *= 2.0 / (h + 2 * self.pad)
 
         grid = base_grid + shift
-        return F.grid_sample(
-            x, grid, padding_mode="zeros", align_corners=False
-        )
+        return F.grid_sample(x, grid, padding_mode="zeros", align_corners=False)
 
 
 class Transform:

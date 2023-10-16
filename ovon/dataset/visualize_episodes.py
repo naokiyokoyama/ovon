@@ -6,12 +6,14 @@ import habitat
 import habitat_sim
 from habitat.config import read_write
 from habitat.config.default import get_config
-from habitat.config.default_structured_configs import \
-    HabitatSimSemanticSensorConfig
+from habitat.config.default_structured_configs import HabitatSimSemanticSensorConfig
 from habitat.utils.visualizations import maps
 
-from ovon.utils.utils import (draw_bounding_box, draw_point, is_on_same_floor,
-                              load_dataset)
+from ovon.utils.utils import (
+    draw_bounding_box,
+    draw_point,
+    load_dataset,
+)
 
 SCENES_ROOT = "data/scene_datasets/hm3d"
 MAP_RESOLUTION = 512
@@ -42,9 +44,7 @@ def get_objnav_config(scene):
 
 
 def get_sim(objnav_config):
-    sim = habitat.sims.make_sim(
-        "Sim-v0", config=objnav_config.habitat.simulator
-    )
+    sim = habitat.sims.make_sim("Sim-v0", config=objnav_config.habitat.simulator)
 
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()
@@ -56,9 +56,7 @@ def get_sim(objnav_config):
     )
     navmesh_settings.agent_radius = 0.18
     navmesh_settings.agent_height = 0.88
-    sim.recompute_navmesh(
-        sim.pathfinder, navmesh_settings, include_static_objects=True
-    )
+    sim.recompute_navmesh(sim.pathfinder, navmesh_settings, include_static_objects=True)
 
     return sim
 
@@ -69,12 +67,7 @@ def setup(scene):
     return sim
 
 
-def visualize_episodes(
-    sim,
-    episodes,
-    goals,
-    object_category
-):
+def visualize_episodes(sim, episodes, goals, object_category):
     top_down_maps = []
 
     grouped_goal_heights = []
@@ -129,10 +122,8 @@ def visualize_episodes(
                     maps.MAP_VIEW_POINT_INDICATOR,
                 )
 
-            draw_bounding_box(
-                sim, top_down_map, goal["object_id"], ref_floor_height
-            )
-        
+            draw_bounding_box(sim, top_down_map, goal["object_id"], ref_floor_height)
+
         for episode in episodes:
             if episode["object_category"] != object_category:
                 continue

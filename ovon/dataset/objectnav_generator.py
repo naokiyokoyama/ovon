@@ -24,14 +24,18 @@ from habitat_sim.simulator import Simulator
 from habitat_sim.utils.common import quat_from_two_vectors, quat_to_coeffs
 from numpy import ndarray
 from sklearn.cluster import AgglomerativeClustering
+
 # from ovon.dataset.visualization import plot_area  # noqa:F401
 # from ovon.dataset.visualization import save_candidate_imgs
 from tqdm import tqdm
 
 from ovon.dataset.ovon_dataset import OVONEpisode
 from ovon.dataset.pose_sampler import PoseSampler
-from ovon.dataset.semantic_utils import (ObjectCategoryMapping, WordnetMapping,
-                                         get_hm3d_semantic_scenes)
+from ovon.dataset.semantic_utils import (
+    ObjectCategoryMapping,
+    WordnetMapping,
+    get_hm3d_semantic_scenes,
+)
 from ovon.utils.utils import load_json
 
 

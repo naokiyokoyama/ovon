@@ -1,6 +1,4 @@
 import argparse
-import copy
-import math
 import os
 from collections import defaultdict
 
@@ -33,9 +31,11 @@ def max_similarity(clip_m, category, val_seen_categories):
 
     prompt = PROMPT.format(category=category)
     text_embedding = clip_embeddings(clip_m, [prompt] + categories)
-    return torch.cosine_similarity(
-        text_embedding[0].unsqueeze(0), text_embedding[1:]
-    ).max().item()
+    return (
+        torch.cosine_similarity(text_embedding[0].unsqueeze(0), text_embedding[1:])
+        .max()
+        .item()
+    )
 
 
 def plot_scatterplot(x, y, output_path):
@@ -63,14 +63,16 @@ def region_analysis(input_path, output_path):
     for region, categories in categories_by_region.items():
         for category in categories:
             region_per_category[category] = region
-    
+
     files = [
         "/coc/testnvme/nyokoyama3/public/ft_dagger_ckpt_30_vue.json",
         "/coc/testnvme/nyokoyama3/public/ft_dagger_ckpt_30_vuh.json",
     ]
 
     val_seen_categories = load_json("data/hm3d_meta/ovon_categories.json")["val_seen"]
-    val_seen_categories = [PROMPT.format(category=category) for category in val_seen_categories]
+    val_seen_categories = [
+        PROMPT.format(category=category) for category in val_seen_categories
+    ]
 
     clip_m, preprocess = clip.load("RN50", device="cuda")
 
@@ -97,8 +99,12 @@ def region_analysis(input_path, output_path):
                 continue
             region_categories = categories_by_region[region]
 
-            vs_region_categories = list(set(region_categories).intersection(set(val_seen_categories)))
-            category_to_max_similarity[category] = round(max_similarity(clip_m, category, vs_region_categories), 2)
+            vs_region_categories = list(
+                set(region_categories).intersection(set(val_seen_categories))
+            )
+            category_to_max_similarity[category] = round(
+                max_similarity(clip_m, category, vs_region_categories), 2
+            )
 
         for region, episodes in episodes_per_region.items():
             success_per_similarity = defaultdict(int)
@@ -110,12 +116,21 @@ def region_analysis(input_path, output_path):
                     continue
                 success_per_similarity[cos_sim] += episode["success"]
                 count_per_similarity[cos_sim] += 1
-            
-            success_per_similarity = {k: v / count_per_similarity[k] for k, v in success_per_similarity.items()}
 
-            out_path = os.path.join(output_path, "{}_success_vs_sim.png".format(region.replace("/", "_")))
+            success_per_similarity = {
+                k: v / count_per_similarity[k]
+                for k, v in success_per_similarity.items()
+            }
 
-            plot_scatterplot(list(count_per_similarity.keys()), list(success_per_similarity.values()), out_path)
+            out_path = os.path.join(
+                output_path, "{}_success_vs_sim.png".format(region.replace("/", "_"))
+            )
+
+            plot_scatterplot(
+                list(count_per_similarity.keys()),
+                list(success_per_similarity.values()),
+                out_path,
+            )
 
         # print(category_to_max_similarity)
 

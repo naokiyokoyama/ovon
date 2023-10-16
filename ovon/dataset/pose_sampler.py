@@ -1,12 +1,11 @@
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import habitat_sim
 import numpy as np
-from habitat_sim._ext.habitat_sim_bindings import BBox, SemanticObject
+from habitat_sim._ext.habitat_sim_bindings import SemanticObject
 from habitat_sim.agent.agent import AgentState, SixDOFPose
 from habitat_sim.simulator import Simulator
-from habitat_sim.utils.common import (quat_from_angle_axis,
-                                      quat_from_two_vectors)
+from habitat_sim.utils.common import quat_from_angle_axis, quat_from_two_vectors
 from numpy import ndarray
 
 EPS_ARRAY = np.array([1e-5, 0.0, 1e-5])

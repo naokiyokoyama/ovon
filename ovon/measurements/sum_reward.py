@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, List
 
-from habitat import registry, Measure, EmbodiedTask
+from habitat import EmbodiedTask, Measure, registry
 from habitat.config.default_structured_configs import MeasurementConfig
 from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
@@ -15,9 +15,7 @@ class SumReward(Measure):
 
     cls_uuid: str = "sum_reward"
 
-    def __init__(
-        self, config: "DictConfig", *args: Any, **kwargs: Any
-    ):
+    def __init__(self, config: "DictConfig", *args: Any, **kwargs: Any):
         self._config = config
         self._reward_terms = config.reward_terms
         self._reward_coefficients = [float(i) for i in config.reward_coefficients]
@@ -27,14 +25,10 @@ class SumReward(Measure):
         return self.cls_uuid
 
     def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
-        task.measurements.check_measure_dependencies(
-            self.uuid, self._reward_terms
-        )
+        task.measurements.check_measure_dependencies(self.uuid, self._reward_terms)
         self.update_metric(episode=episode, task=task, *args, **kwargs)  # type: ignore
 
-    def update_metric(
-        self, episode, task: EmbodiedTask, *args: Any, **kwargs: Any
-    ):
+    def update_metric(self, episode, task: EmbodiedTask, *args: Any, **kwargs: Any):
         self._metric = 0
         for term, coefficient in zip(self._reward_terms, self._reward_coefficients):
             self._metric += coefficient * task.measurements.measures[term].get_metric()

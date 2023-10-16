@@ -1,14 +1,12 @@
-import openai
 import pickle
-import numpy as np
+import random
+import time
+from copy import deepcopy
 from math import ceil
 from typing import List
-from tqdm import tqdm
-import random
-from copy import deepcopy
-import time
-import transformers
 
+import openai
+from tqdm import tqdm
 
 PROMPT_2D = """
 {}
@@ -75,7 +73,7 @@ def create_html(
         }
     </script>
     """
-    cnt = len(objects)
+    len(objects)
     html_body = """<body>
         <h2> Visualising {cnt} Relationships </h2>
         """
@@ -122,14 +120,14 @@ def gpt_call(
     return response
 
 
-def prompt_for_obj(obj_dict, type = '2d', drop =  0):
+def prompt_for_obj(obj_dict, type="2d", drop=0):
     PROMPT = ""
     obj_dict.pop("scene")
     obj_dict.pop("img_ref")
     obj_dict.pop("target_obj_color")
-    
+
     keys_list = list(obj_dict["ref_objects"].keys())
-    keys_to_pop = random.sample(keys_list, ceil(len(keys_list)*drop))
+    keys_to_pop = random.sample(keys_list, ceil(len(keys_list) * drop))
     for key in keys_to_pop:
         obj_dict["ref_objects"].pop(key)
 
@@ -151,17 +149,17 @@ def prompt_for_obj(obj_dict, type = '2d', drop =  0):
     return prompt
 
 
-def generate_description_for_scene(meta_file_path, openai = True):
-    drop_rate = [0,.25,.5]
+def generate_description_for_scene(meta_file_path, openai=True):
+    drop_rate = [0, 0.25, 0.5]
     with open(meta_file_path, "rb") as f:
         object_dict_list = pickle.load(f)
     cnt = 0
     current_list = deepcopy(object_dict_list)
-    
+
     for obj_dict in tqdm(current_list):
         for d in drop_rate:
             temp_obj_dict = deepcopy(obj_dict)
-            prompt = prompt_for_obj(temp_obj_dict, drop = d)
+            prompt = prompt_for_obj(temp_obj_dict, drop=d)
             if openai:
                 response = gpt_call(prompt=prompt)
                 if response is None:
@@ -175,7 +173,9 @@ def generate_description_for_scene(meta_file_path, openai = True):
             else:
                 inputs = alpaca_tokenizer(prompt, return_tensors="pt")
                 out = alpaca_model.generate(inputs=inputs.input_ids, max_new_tokens=100)
-                output_text = alpaca_tokenizer.batch_decode(out, skip_special_tokens=True)[0]
+                output_text = alpaca_tokenizer.batch_decode(
+                    out, skip_special_tokens=True
+                )[0]
                 output_text = output_text[len(inputs) :]
                 obj_dict[f"Instruction_{1-d}"] = output_text
                 print(output_text)
@@ -186,10 +186,10 @@ def generate_description_for_scene(meta_file_path, openai = True):
 
 if __name__ == "__main__":
     openai.api_key = "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"
-    #alpaca_model = transformers.AutoModelForCausalLM.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
-    #alpaca_tokenizer = transformers.AutoTokenizer.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
-    #print("Model has been loaded")
-    scenes_1 = ['vLpv2VX547B']
+    # alpaca_model = transformers.AutoModelForCausalLM.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
+    # alpaca_tokenizer = transformers.AutoTokenizer.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
+    # print("Model has been loaded")
+    scenes_1 = ["vLpv2VX547B"]
     scenes_5 = [
         "U3oQjwTuMX8",
         "b3WpMbPFB6q",
@@ -198,8 +198,9 @@ if __name__ == "__main__":
         "JptJPosx1Z6",
     ]
     for scene in scenes_1:
-        object_view_meta_file = "/nethome/akutumbaka3/files/ovonproject/data/object_views/train/meta/{}.pkl".format(
-            scene
+        object_view_meta_file = (
+            "/nethome/akutumbaka3/files/ovonproject/data/object_views/train/meta/{}.pkl"
+            .format(scene)
         )
         final_list = generate_description_for_scene(object_view_meta_file)
         webpage_path = f"/nethome/akutumbaka3/files/ovonproject/data/object_views/train/webpage/{scene}.html"

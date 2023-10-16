@@ -5,7 +5,6 @@ from collections import defaultdict
 from typing import Dict, List
 
 import habitat_sim
-import numpy as np
 from habitat.utils.render_wrapper import append_text_to_image
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_sim import bindings as hsim
@@ -53,7 +52,9 @@ def save_observations(file_path, out_path, object_goal_meta):
         max_coverage = 0
         observation = None
         for goal in goals:
-            semantic_id = [o.semantic_id for o in objects if o.id == goal["object_id"]][0]
+            semantic_id = [o.semantic_id for o in objects if o.id == goal["object_id"]][
+                0
+            ]
 
             for view_point in goal["view_points"]:
                 position = view_point["agent_state"]["position"]
@@ -72,9 +73,17 @@ def save_observations(file_path, out_path, object_goal_meta):
                         observation = obs
 
         if observation is not None:
-            observation = observations_to_image({"rgb": observation["color_sensor"]}, {})
-            observation = append_text_to_image(observation, text=["object_category: {}".format(object_category)], font_size=0.75)
-            save_image(observation, os.path.join(output_path, "{}.png".format(object_category)))
+            observation = observations_to_image(
+                {"rgb": observation["color_sensor"]}, {}
+            )
+            observation = append_text_to_image(
+                observation,
+                text=["object_category: {}".format(object_category)],
+                font_size=0.75,
+            )
+            save_image(
+                observation, os.path.join(output_path, "{}.png".format(object_category))
+            )
             total_saved += 1
     print("Total observations saved: {}".format(total_saved))
 

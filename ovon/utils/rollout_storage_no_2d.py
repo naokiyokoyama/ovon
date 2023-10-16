@@ -35,9 +35,9 @@ class RolloutStorageNo2D(RolloutStorage):
             if obs[sensor].dim() < 4:
                 filtered_obs[sensor] = obs[sensor]
         # Extract visual features from 2D observations
-        filtered_obs[
-            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
-        ] = self.visual_encoder(obs)
+        filtered_obs[PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY] = (
+            self.visual_encoder(obs)
+        )
         return filtered_obs
 
     def insert(
