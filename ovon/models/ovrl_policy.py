@@ -7,7 +7,6 @@ import torch.nn as nn
 from gym import spaces
 from habitat import logger
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
-from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet, resnet
 from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
@@ -15,15 +14,29 @@ from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torchvision import transforms as T
 
+from ovon.models.encoders.cross_attention import CrossAttention
 from ovon.models.encoders.dinov2_encoder import DINOV2Encoder
 from ovon.models.encoders.habitat_resnet import HabitatResnetEncoder
 from ovon.models.encoders.vc1_encoder import VC1Encoder
 from ovon.models.encoders.visual_encoder import VisualEncoder
 from ovon.models.encoders.visual_encoder_v2 import VisualEncoder as VisualEncoderV2
 from ovon.models.transforms import get_transform
-from ovon.task.sensors import ClipImageGoalSensor, ClipObjectGoalSensor
+from ovon.task.sensors import ClipObjectGoalSensor
 from ovon.utils.utils import load_encoder
 
+
+class FusionTypes:
+    CONCAT = "concat"
+    XATTN = "cross_attention"
+    XATTN_CONCAT = "cross_attention_concat"
+
+    @classmethod
+    def is_fusion_type(cls, fusion_type: str) -> bool:
+        return fusion_type in [
+            cls.CONCAT,
+            cls.XATTN,
+            cls.XATTN_CONCAT,
+        ]
 
 class OVRLPolicyNet(Net):
     r"""A baseline sequence to sequence network that concatenates instruction,
@@ -60,12 +73,16 @@ class OVRLPolicyNet(Net):
         run_type: str = "train",
         add_clip_linear_projection: bool = False,
         num_environments: int = 1,
+        fusion_type: str = "concat",
     ):
         super().__init__()
 
         self.prev_action_embedding: nn.Module
         self.discrete_actions = discrete_actions
         self.add_clip_linear_projection = add_clip_linear_projection
+        self.fusion_type = fusion_type
+        assert FusionTypes.is_fusion_type(self.fusion_type), "Unknown fusion type."
+
         self._n_prev_action = 32
         if discrete_actions:
             self.prev_action_embedding = nn.Embedding(
@@ -74,8 +91,8 @@ class OVRLPolicyNet(Net):
         else:
             num_actions = get_num_actions(action_space)
             self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
-        self._n_prev_action = 32
-        rnn_input_size = self._n_prev_action  # test
+        rnn_input_size = self._n_prev_action
+        rnn_input_size_info = {"prev_action": self._n_prev_action}
 
         name = "resize"
         if use_augmentations and run_type == "train":
@@ -157,28 +174,24 @@ class OVRLPolicyNet(Net):
                 self.visual_encoder.eval()
         logger.info("RGB encoder is {}, Frozen: {}".format(backbone, freeze_backbone))
 
-        if ObjectGoalSensor.cls_uuid in observation_space.spaces:
-            self._n_object_categories = (
-                int(observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]) + 1
-            )
-            self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
-            rnn_input_size += 32
+        cross_attention_inputs = {}
+        if self.fusion_type in [FusionTypes.CONCAT, FusionTypes.XATTN_CONCAT]:
+            # hidden_size should be equal to self.visual_encoder.output_size
+            rnn_input_size += hidden_size
+            rnn_input_size_info["visual_feats"] = hidden_size
+        if self.fusion_type in [FusionTypes.XATTN, FusionTypes.XATTN_CONCAT]:
+            cross_attention_inputs["visual_feats"] = hidden_size
 
         if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
             clip_embedding = 1024 if clip_model == "RN50" else 768
             if self.add_clip_linear_projection:
                 self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-                rnn_input_size += 256
-            else:
+                clip_embedding = 256
+            if self.fusion_type == FusionTypes.CONCAT:
                 rnn_input_size += clip_embedding
-
-        if ClipImageGoalSensor.cls_uuid in observation_space.spaces:
-            clip_embedding = 1024 if clip_model == "RN50" else 768
-            if self.add_clip_linear_projection:
-                self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-                rnn_input_size += 256
-            else:
-                rnn_input_size += clip_embedding
+                rnn_input_size_info["clip_goal"] = clip_embedding
+            elif self.fusion_type in [FusionTypes.XATTN, FusionTypes.XATTN_CONCAT]:
+                cross_attention_inputs["clip_goal"] = clip_embedding
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
@@ -186,6 +199,7 @@ class OVRLPolicyNet(Net):
             ]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["gps_embedding"] = 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
@@ -194,11 +208,31 @@ class OVRLPolicyNet(Net):
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["compass_embedding"] = 32
+
+        if self.fusion_type in [FusionTypes.XATTN, FusionTypes.XATTN_CONCAT]:
+            self.cross_attention = CrossAttention(
+                x1_dim=cross_attention_inputs["clip_goal"],
+                x2_dim=cross_attention_inputs["visual_feats"],
+            )
+            rnn_input_size += self.cross_attention.output_size
+            rnn_input_size_info["cross_attention"] = self.cross_attention.output_size
 
         self._hidden_size = hidden_size
 
+        print("RNN input size info: ")
+        total = 0
+        for k, v in rnn_input_size_info.items():
+            print(f"  {k}: {v}")
+            total += v
+        if total - rnn_input_size != 0:
+            print(f"  UNACCOUNTED: {total - rnn_input_size}")
+        total_str = f"  Total RNN input size: {total}"
+        print("  " + "-" * (len(total_str) - 2))
+        print(total_str)
+
         self.state_encoder = build_rnn_state_encoder(
-            (0 if self.is_blind else self._hidden_size) + rnn_input_size,
+            rnn_input_size,
             self._hidden_size,
             rnn_type=rnn_type,
             num_layers=num_recurrent_layers,
@@ -234,39 +268,35 @@ class OVRLPolicyNet(Net):
         aux_loss_state = {}
 
         N = rnn_hidden_states.size(0)
-        if not self.is_blind:
-            # We CANNOT use observations.get() here because self.visual_encoder(observations)
-            # is an expensive operation. Therefore, we need `# noqa: SIM401`
-            if (  # noqa: SIM401
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
-            ):
-                visual_feats = observations[
-                    PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
-                ]
-            else:
-                # visual encoder
-                visual_feats = self.visual_encoder(observations, N)
 
-            visual_feats = self.visual_fc(visual_feats)
-            aux_loss_state["perception_embed"] = visual_feats
+        # We CANNOT use observations.get() here because self.visual_encoder(observations)
+        # is an expensive operation. Therefore, we need `# noqa: SIM401`
+        if (  # noqa: SIM401
+            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
+        ):
+            visual_feats = observations[
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
+            ]
+        else:
+            # visual encoder
+            visual_feats = self.visual_encoder(observations, N)
+
+        visual_feats = self.visual_fc(visual_feats)
+        aux_loss_state["perception_embed"] = visual_feats
+
+        assert ClipObjectGoalSensor.cls_uuid in observations
+        object_goal = observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
+        if self.add_clip_linear_projection:
+            object_goal = self.obj_categories_embedding(object_goal)
+
+        if self.fusion_type in [FusionTypes.CONCAT, FusionTypes.XATTN_CONCAT]:
             x.append(visual_feats)
-
-        if ObjectGoalSensor.cls_uuid in observations:
-            object_goal = observations[ObjectGoalSensor.cls_uuid].long()
-            x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
-
-        if ClipObjectGoalSensor.cls_uuid in observations:
-            object_goal = observations[ClipObjectGoalSensor.cls_uuid].float().cuda()
-            if self.add_clip_linear_projection:
-                object_goal = self.obj_categories_embedding(object_goal)
-            x.append(object_goal)
-
-        if ClipImageGoalSensor.cls_uuid in observations:
-            clip_image_goal = observations[ClipImageGoalSensor.cls_uuid]
-            assert clip_image_goal is not None
-            if self.add_clip_linear_projection:
-                clip_image_goal = self.obj_categories_embedding(clip_image_goal)
-            x.append(clip_image_goal)
+            if self.fusion_type == FusionTypes.CONCAT:
+                x.append(object_goal)
+        if self.fusion_type in [FusionTypes.XATTN, FusionTypes.XATTN_CONCAT]:
+            assert object_goal is not None
+            cross_attention = self.cross_attention(object_goal, visual_feats)
+            x.append(cross_attention)
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(
@@ -327,6 +357,7 @@ class OVRLPolicy(NetPolicy):
         add_clip_linear_projection: bool = False,
         num_environments: int = 1,
         run_type: str = "train",
+        fusion_type: str = "concat",
     ):
         if policy_config is not None:
             discrete_actions = policy_config.action_distribution_type == "categorical"
@@ -360,6 +391,7 @@ class OVRLPolicy(NetPolicy):
                 run_type=run_type,
                 add_clip_linear_projection=add_clip_linear_projection,
                 num_environments=num_environments,
+                fusion_type=fusion_type,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -411,6 +443,7 @@ class OVRLPolicy(NetPolicy):
             freeze_backbone=config.habitat_baselines.rl.policy.freeze_backbone,
             add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
             num_environments=config.habitat_baselines.num_environments,
+            fusion_type=config.habitat_baselines.rl.policy.get("fusion_type", "concat"),
         )
 
 

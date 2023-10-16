@@ -171,7 +171,7 @@ class PointNavResNetCLIPNet(Net):
         else:
             num_actions = get_num_actions(action_space)
             self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
-        rnn_input_size = self._n_prev_action  # test
+        rnn_input_size = self._n_prev_action
         rnn_input_size_info = {"prev_action": self._n_prev_action}
 
         self.visual_encoder = ResNetCLIPEncoder(

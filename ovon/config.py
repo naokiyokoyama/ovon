@@ -125,6 +125,7 @@ class OVONPolicyConfig(PolicyConfig):
     add_clip_linear_projection: bool = False
     depth_ckpt: str = ""
     late_fusion: bool = False
+    fusion_type: str = "concat"
 
     finetune: PolicyFinetuneConfig = PolicyFinetuneConfig()
 
