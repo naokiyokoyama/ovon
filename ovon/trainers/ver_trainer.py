@@ -148,7 +148,7 @@ class VERPIRLNavTrainer(VERTrainer):
                 param.requires_grad_(False)
 
         policy_cfg = self.config.habitat_baselines.rl.policy
-        if policy_cfg.finetune.enabled:
+        if hasattr(policy_cfg, "finetune") and policy_cfg.finetune.enabled:
             self.actor_critic.freeze_visual_encoders()
             self.actor_critic.freeze_state_encoder()
             self.actor_critic.freeze_actor()
@@ -184,7 +184,7 @@ class VERPIRLNavTrainer(VERTrainer):
         count_checkpoints = 0
         policy_cfg = self.config.habitat_baselines.rl.policy
 
-        if policy_cfg.finetune.enabled:
+        if hasattr(policy_cfg, "finetune") and policy_cfg.finetune.enabled:
             lr_scheduler = PIRLNavLRScheduler(
                 optimizer=self.agent.optimizer,
                 agent=self.agent,
@@ -714,6 +714,8 @@ class VERPIRLNavTrainer(VERTrainer):
         metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
         for k, v in metrics.items():
             writer.add_scalar(f"eval_metrics/{k}", v, step_id)
+
+        print("OVON json: {}".format(os.environ.get("OVON_EPISODES_JSON", None)))
 
         if os.environ.get("OVON_EPISODES_JSON", "") != "":
             import json

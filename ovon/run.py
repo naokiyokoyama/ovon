@@ -117,9 +117,7 @@ def main():
             try:
                 os.makedirs(overflow_dir, exist_ok=True)
             except Exception as e:
-                print(
-                    f"Could not create overflow directory {overflow_dir}: {e}"
-                )
+                print(f"Could not create overflow directory {overflow_dir}: {e}")
             assert osp.isdir(overflow_dir)
             # Move the checkpoint file
             try:
@@ -130,8 +128,7 @@ def main():
                 print("Moved checkpoint file to overflow directory")
             except FileNotFoundError:
                 print(
-                    f"Checkpoint file {ckpt_path} not found! "
-                    "Skipping checkpoint move."
+                    f"Checkpoint file {ckpt_path} not found! Skipping checkpoint move."
                 )
             # End the script
             return

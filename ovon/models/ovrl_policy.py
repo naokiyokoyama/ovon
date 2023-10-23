@@ -38,6 +38,7 @@ class FusionTypes:
             cls.XATTN_CONCAT,
         ]
 
+
 class OVRLPolicyNet(Net):
     r"""A baseline sequence to sequence network that concatenates instruction,
     RGB, and depth encodings before decoding an action distribution with an RNN.

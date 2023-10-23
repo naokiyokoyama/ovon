@@ -1,4 +1,3 @@
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import numpy as np
@@ -154,26 +153,7 @@ class FailureModeMeasure(Measure):
         self._max_area = 0
         self._elapsed_steps = 0
         self._reached_within_success_area = False
-        self.set_goal_positions(task)
         self.update_metric(episode=episode, task=task, observations=observations, *args, **kwargs)  # type: ignore
-
-    def set_goal_positions(self, task):
-        sim = task._sim
-        categories = self._ovon_categories["train"]
-
-        semantic_scene = sim.semantic_annotations()
-        category_to_positions = defaultdict(list)
-        for obj in semantic_scene.objects:
-            relabelled_category = self.cat_map[obj.category.name()]
-            if relabelled_category is not None and relabelled_category in categories:
-                category_to_positions[obj.category.name()].append(obj.aabb.center)
-        print(
-            "Total categories: {} - {}".format(
-                len(category_to_positions), len(semantic_scene.objects)
-            )
-        )
-
-        self.category_to_positions = category_to_positions
 
     def visible_goal_area(self, observations, episode, task):
         scene_id = episode.scene_id.split("/")[-1]
@@ -197,65 +177,46 @@ class FailureModeMeasure(Measure):
     def update_metric(
         self, episode, task: NavigationTask, observations, *args: Any, **kwargs: Any
     ):
-        area = self.visible_goal_area(observations, episode, task)
-        self._max_area = max(self._max_area, area)
-        if area >= 0.01:
-            self._goal_seen = True
+        try:
+            area = self.visible_goal_area(observations, episode, task)
+            self._max_area = max(self._max_area, area)
+            if area >= 0.01:
+                self._goal_seen = True
 
-        distance_to_target = task.measurements.measures[
-            OVONDistanceToGoal.cls_uuid
-        ].get_metric()
-        is_success = task.measurements.measures[Success.cls_uuid].get_metric()
+            distance_to_target = task.measurements.measures[
+                OVONDistanceToGoal.cls_uuid
+            ].get_metric()
+            is_success = task.measurements.measures[Success.cls_uuid].get_metric()
 
-        if distance_to_target < 0.25 and not is_success:
-            self._reached_within_success_area = True
+            if distance_to_target < 0.25:
+                self._reached_within_success_area = True
 
-        metrics = {
-            "exploration": 0.0,
-            "last_mile_nav": 0.0,
-            "recognition": 0.0,
-            "stop_failure": 0.0,
-            "nearest_object": "",
-            "nearest_object_distance": 0,
-            "objects_within_2m": [],
-        }
+            metrics = {
+                "stop_too_far": False,
+                "stop_failure": False,
+                "recognition_failure": False,
+                "misidentification": False,
+                "exploration": False,
+            }
 
-        scene_id = episode.scene_id.split("/")[-1]
-        [k for k in task._dataset.goals_by_category.keys() if k.startswith(scene_id)]
-        current_position = task._sim.get_agent_state().position
+            metrics["area_seen"] = self._max_area
+            if not is_success:
+                if self._goal_seen:
+                    if task.is_stop_called:
+                        metrics["stop_too_far"] = True
+                    else:
+                        metrics["stop_failure"] = self._reached_within_success_area
+                        metrics["recognition_failure"] = (
+                            not self._reached_within_success_area
+                        )
+                else:
+                    if task.is_stop_called:
+                        metrics["misidentification"] = True
+                    else:
+                        metrics["exploration"] = True
+            metrics["num_steps"] = self._elapsed_steps
 
-        nearest_object = ""
-        nearest_object_distance = 100
-        objects_within_2m = []
-        for object_key, positions in self.category_to_positions.items():
-            # goals = task._dataset.goals_by_category[object_key]
-            # distance = min([self._euclidean_distance(current_position, goal.position) for goal in goals])
-            distance = min(
-                [
-                    self._euclidean_distance(current_position, position)
-                    for position in positions
-                ]
-            )
-            if distance < 2.0 and nearest_object_distance > distance:
-                nearest_object = object_key.split("_")[-1]
-                nearest_object_distance = distance
-            if distance < 2.0:
-                objects_within_2m.append(object_key.split("_")[-1])
-        metrics["nearest_object"] = nearest_object
-        metrics["nearest_object_distance"] = float(nearest_object_distance)
-        metrics["objects_within_2m"] = ",".join(objects_within_2m)
-        metrics["position"] = ",".join([str(i) for i in current_position.tolist()])
-
-        if not is_success:
-            if not self._goal_seen and distance_to_target > 2.0:
-                metrics["exploration"] = 1.0
-            if self._goal_seen and distance_to_target <= 2.0:
-                metrics["last_mile_nav"] = 1.0
-            if self._goal_seen and distance_to_target > 2.0:
-                metrics["recognition"] = 1.0
-        metrics["area_seen"] = self._max_area
-        metrics["reached_within_success_area"] = self._reached_within_success_area
-        metrics["num_steps"] = self._elapsed_steps
-
-        self._elapsed_steps += 1
-        self._metric = metrics
+            self._elapsed_steps += 1
+            self._metric = metrics
+        except Exception as e:
+            print("Error ", e)
