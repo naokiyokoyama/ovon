@@ -231,7 +231,6 @@ def edit_config(config, args):
             HabitatSimSemanticSensorConfig,
         )
 
-        # Camera required to load in a scene; use dummy 1x1 depth camera
         config.habitat.simulator.agents.main_agent.sim_sensors.update(
             {"semantic_sensor": HabitatSimSemanticSensorConfig(height=640, width=360)}
         )

@@ -1,28 +1,51 @@
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
-import clip
 import numpy as np
 import torch
 from gym import spaces
-from gym.spaces import Dict as SpaceDict
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
-from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.ddppo.policy.resnet import resnet18
-from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
 from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
-from torchvision import transforms as T
 
-from ovon.task.sensors import (
-    ClipGoalSelectorSensor,
-    ClipImageGoalSensor,
-    ClipObjectGoalSensor,
-)
+from ovon.models.encoders.cma_xattn import CrossModalAttention
+from ovon.models.encoders.cross_attention import CrossAttention
+from ovon.models.encoders.make_encoder import make_encoder
+from ovon.task.sensors import ClipObjectGoalSensor
+
+
+class FusionType:
+    _possible_fusions = [
+        "concat",
+        "cross_attention",
+        "cross_attention_cma",
+        "cross_attention_concat",
+        "concat_late_fusion",
+    ]
+
+    def __init__(self, fusion_type: str):
+        assert fusion_type in self._possible_fusions
+        self._fusion_type = fusion_type
+
+    @property
+    def concat(self):
+        return "concat" in self._fusion_type
+
+    @property
+    def xattn(self):
+        return "cross_attention" in self._fusion_type
+
+    @property
+    def late_fusion(self):
+        return "late_fusion" in self._fusion_type
+
+    @property
+    def cma(self):
+        return "cma" in self._fusion_type
 
 
 @baseline_registry.register_policy
@@ -34,12 +57,15 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         hidden_size: int = 512,
         num_recurrent_layers: int = 1,
         rnn_type: str = "GRU",
-        backbone: str = "resnet50_clip_avgpool",
+        backbone: str = "clip_avgpool",
         policy_config: "DictConfig" = None,
         aux_loss_config: Optional["DictConfig"] = None,
-        add_clip_linear_projection: bool = False,
         depth_ckpt: str = "",
-        late_fusion: bool = False,
+        fusion_type: str = "concat",
+        attn_heads: int = 3,
+        use_vis_query: bool = False,
+        use_residual: bool = True,
+        residual_vision: bool = False,
         **kwargs,
     ):
         if policy_config is not None:
@@ -50,7 +76,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             self.action_distribution_type = "categorical"
 
         super().__init__(
-            PointNavResNetCLIPNet(
+            OVONNet(
                 observation_space=observation_space,
                 action_space=action_space,  # for previous action
                 hidden_size=hidden_size,
@@ -58,9 +84,12 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 rnn_type=rnn_type,
                 backbone=backbone,
                 discrete_actions=discrete_actions,
-                add_clip_linear_projection=add_clip_linear_projection,
                 depth_ckpt=depth_ckpt,
-                late_fusion=late_fusion,
+                fusion_type=fusion_type,
+                attn_heads=attn_heads,
+                use_vis_query=use_vis_query,
+                use_residual=use_residual,
+                residual_vision=residual_vision,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -75,6 +104,13 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         action_space,
         **kwargs,
     ):
+        # If training resnet encoder from scratch, assert train_encoder=True
+        if config.habitat_baselines.rl.policy.backbone == "resnet":
+            assert config.habitat_baselines.rl.ddppo.train_encoder, (
+                "When training resnet encoder from scratch, "
+                "train_encoder must be set to True."
+            )
+
         # Exclude cameras for rendering from the observation space.
         ignore_names: List[str] = []
         for agent_config in config.habitat.simulator.agents.values():
@@ -88,30 +124,29 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 ((k, v) for k, v in observation_space.items() if k not in ignore_names)
             )
         )
-        try:
-            """TODO: Eventually eliminate this check. Safeguard for loading
-            configs from checkpoints created before commit where depth_ckpt was
-            added to OVONPolicyConfig
-            """
-            depth_ckpt = config.habitat_baselines.rl.policy.depth_ckpt
-        except:
-            depth_ckpt = ""
-        try:
-            late_fusion = config.habitat_baselines.rl.policy.late_fusion
-        except:
-            late_fusion = False
+        depth_ckpt = config.habitat_baselines.rl.policy.get("depth_ckpt", "")
+        fusion_type = config.habitat_baselines.rl.policy.get("fusion_type", "concat")
+        attn_heads = config.habitat_baselines.rl.policy.get("attn_heads", 3)
+        use_vis_query = config.habitat_baselines.rl.policy.get("use_vis_query", False)
+        use_residual = config.habitat_baselines.rl.policy.get("use_residual", True)
+        residual_vision = config.habitat_baselines.rl.policy.get(
+            "residual_vision", False
+        )
         return cls(
             observation_space=filtered_obs,
             action_space=action_space,
             hidden_size=config.habitat_baselines.rl.ppo.hidden_size,
             rnn_type=config.habitat_baselines.rl.ddppo.rnn_type,
             num_recurrent_layers=config.habitat_baselines.rl.ddppo.num_recurrent_layers,
-            backbone=config.habitat_baselines.rl.ddppo.backbone,
+            backbone=config.habitat_baselines.rl.policy.backbone,
             policy_config=config.habitat_baselines.rl.policy,
             aux_loss_config=config.habitat_baselines.rl.auxiliary_losses,
-            add_clip_linear_projection=config.habitat_baselines.rl.policy.add_clip_linear_projection,
             depth_ckpt=depth_ckpt,
-            late_fusion=late_fusion,
+            fusion_type=fusion_type,
+            attn_heads=attn_heads,
+            use_vis_query=use_vis_query,
+            use_residual=use_residual,
+            residual_vision=residual_vision,
         )
 
     def freeze_visual_encoders(self):
@@ -143,7 +178,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             param.requires_grad_(True)
 
 
-class PointNavResNetCLIPNet(Net):
+class OVONNet(Net):
     def __init__(
         self,
         observation_space: spaces.Dict,
@@ -151,19 +186,29 @@ class PointNavResNetCLIPNet(Net):
         hidden_size: int,
         num_recurrent_layers: int,
         rnn_type: str,
-        backbone,
+        backbone: str,
         discrete_actions: bool = True,
-        clip_model: str = "RN50",
-        depth_ckpt: str = "",
-        add_clip_linear_projection: bool = False,
-        late_fusion: bool = False,
+        fusion_type: str = "concat",
+        clip_embedding_size: int = 1024,  # Target category CLIP embedding size
+        attn_heads: int = 3,
+        use_vis_query: bool = False,
+        use_residual: bool = True,
+        residual_vision: bool = False,
+        *args,
+        **kwargs,
     ):
+        print("Observation space info:")
+        for k, v in observation_space.spaces.items():
+            print(f"  {k}: {v}")
+
         super().__init__()
-        self.prev_action_embedding: nn.Module
         self.discrete_actions = discrete_actions
-        self.add_clip_linear_projection = add_clip_linear_projection
-        self.late_fusion = late_fusion
+        self._fusion_type = FusionType(fusion_type)
+        self._hidden_size = hidden_size
+
+        # Embedding layer for previous action
         self._n_prev_action = 32
+        rnn_input_size_info = {"prev_action": self._n_prev_action}
         if discrete_actions:
             self.prev_action_embedding = nn.Embedding(
                 action_space.n + 1, self._n_prev_action
@@ -171,88 +216,85 @@ class PointNavResNetCLIPNet(Net):
         else:
             num_actions = get_num_actions(action_space)
             self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
-        rnn_input_size = self._n_prev_action
-        rnn_input_size_info = {"prev_action": self._n_prev_action}
 
-        self.visual_encoder = ResNetCLIPEncoder(
-            observation_space,
-            backbone_type=backbone,
-            clip_model=clip_model,
-            depth_ckpt=depth_ckpt,
-        )
-        visual_fc_input = self.visual_encoder.output_shape[0]
-        if ClipImageGoalSensor.cls_uuid in observation_space.spaces:
-            # Goal image is a goal embedding, gets processed as a separate
-            # input rather than along with the visual features
-            visual_fc_input -= 1024
-        self.visual_fc = nn.Sequential(
-            nn.Linear(visual_fc_input, hidden_size),
-            nn.ReLU(True),
-        )
-        print("Observation space info:")
-        for k, v in observation_space.spaces.items():
-            print(f"  {k}: {v}")
-
-        if ObjectGoalSensor.cls_uuid in observation_space.spaces:
-            self._n_object_categories = (
-                int(observation_space.spaces[ObjectGoalSensor.cls_uuid].high[0]) + 1
-            )
-            self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
-            rnn_input_size += 32
-            rnn_input_size_info["object_goal"] = 32
-
-        if (
-            ClipObjectGoalSensor.cls_uuid in observation_space.spaces
-            or ClipImageGoalSensor.cls_uuid in observation_space.spaces
-        ):
-            clip_embedding = 1024 if clip_model == "RN50" else 768
-            print(
-                f"CLIP embedding: {clip_embedding}, "
-                f"Add CLIP linear: {add_clip_linear_projection}"
-            )
-            if self.add_clip_linear_projection:
-                self.obj_categories_embedding = nn.Linear(clip_embedding, 256)
-                object_goal_size = 256
+        # Visual encoder
+        self.visual_encoder = make_encoder(backbone, observation_space)
+        if backbone == "clip_attnpool":
+            self.visual_fc = nn.Identity()
+            visual_feats_size = clip_embedding_size
+        else:
+            if backbone == "resnet":
+                self.visual_fc = nn.Sequential(
+                    nn.Flatten(),
+                    nn.Linear(
+                        np.prod(self.visual_encoder.output_shape), hidden_size
+                    ),
+                    nn.ReLU(True),
+                )
             else:
-                object_goal_size = clip_embedding
+                self.visual_fc = nn.Sequential(
+                    nn.Linear(self.visual_encoder.output_size, hidden_size),
+                    nn.ReLU(True),
+                )
+            visual_feats_size = hidden_size
 
-            if not late_fusion:
-                rnn_input_size += object_goal_size
-                rnn_input_size_info["clip_goal"] = object_goal_size
-
-        if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
-            input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
-                0
-            ]
-            self.gps_embedding = nn.Linear(input_gps_dim, 32)
-            rnn_input_size += 32
-            rnn_input_size_info["gps_embedding"] = 32
-
+        # Optional Compass embedding layer
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
                 observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[0] == 1
             ), "Expected compass with 2D rotation."
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
-            rnn_input_size += 32
             rnn_input_size_info["compass_embedding"] = 32
 
-        if not self.is_blind:
-            rnn_input_size += hidden_size
-            rnn_input_size_info["visual_feats"] = hidden_size
+        # Optional GPS embedding layer
+        if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
+            input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
+                0
+            ]
+            self.gps_embedding = nn.Linear(input_gps_dim, 32)
+            rnn_input_size_info["gps_embedding"] = 32
 
-        self._hidden_size = hidden_size
+        # Optional cross-attention layer
+        if self._fusion_type.concat:
+            rnn_input_size_info["visual_feats"] = visual_feats_size
+        elif self._fusion_type.xattn:
+            if backbone == "clip_attnpool":
+                embed_dim = 1024
+                attn_heads = 1
+            else:
+                embed_dim = None
+            if self._fusion_type.cma:
+                self.cross_attention = CrossModalAttention(
+                    text_embedding_dim=clip_embedding_size,
+                    rgb_embedding_dim=visual_feats_size,
+                    hidden_size=512,
+                )
+            else:
+                self.cross_attention = CrossAttention(
+                    x1_dim=clip_embedding_size,
+                    x2_dim=visual_feats_size,
+                    num_heads=attn_heads,
+                    use_vis_query=use_vis_query,
+                    use_residual=use_residual,
+                    residual_vision=residual_vision,
+                    embed_dim=embed_dim,
+                )
+            rnn_input_size_info["visual_feats"] = self.cross_attention.output_size
+        else:
+            raise NotImplementedError(f"Unknown fusion type: {fusion_type}")
 
+        assert ClipObjectGoalSensor.cls_uuid in observation_space.spaces
+        if not self._fusion_type.late_fusion and not self._fusion_type.xattn:
+            rnn_input_size_info["clip_goal"] = clip_embedding_size
+
+        # Report the type and sizes of the inputs to the RNN
+        rnn_input_size = sum(rnn_input_size_info.values())
         print("RNN input size info: ")
-        total = 0
         for k, v in rnn_input_size_info.items():
             print(f"  {k}: {v}")
-            total += v
-        if total - rnn_input_size != 0:
-            print(f"  UNACCOUNTED: {total - rnn_input_size}")
-        total_str = f"  Total RNN input size: {total}"
-        print("  " + "-" * (len(total_str) - 2))
-        print(total_str)
+        total_str = f"  Total RNN input size: {rnn_input_size}"
+        print("  " + "-" * (len(total_str) - 2) + "\n" + total_str)
 
         self.state_encoder = build_rnn_state_encoder(
             rnn_input_size,
@@ -260,6 +302,12 @@ class PointNavResNetCLIPNet(Net):
             rnn_type=rnn_type,
             num_layers=num_recurrent_layers,
         )
+
+        if self._fusion_type.late_fusion:
+            self.late_fusion_fc = nn.Sequential(
+                nn.Linear(clip_embedding_size, hidden_size),
+                nn.ReLU(True),
+            )
 
         self.train()
 
@@ -269,7 +317,7 @@ class PointNavResNetCLIPNet(Net):
 
     @property
     def is_blind(self):
-        return self.visual_encoder.is_blind
+        return False
 
     @property
     def num_recurrent_layers(self):
@@ -287,62 +335,28 @@ class PointNavResNetCLIPNet(Net):
         masks,
         rnn_build_seq_info: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
-        x = []
-        aux_loss_state = {}
-        clip_image_goal = None
-        object_goal = None
-        if not self.is_blind:
-            # We CANNOT use observations.get() here because
-            # self.visual_encoder(observations) is an expensive operation. Therefore,
-            # we need `# noqa: SIM401`
-            if (  # noqa: SIM401
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
-            ):
-                visual_feats = observations[
-                    PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
-                ]
-            else:
-                visual_feats = self.visual_encoder(observations)
+        # We CANNOT use observations.get() here because
+        # self.visual_encoder(observations) is an expensive operation. Therefore,
+        # we need `# noqa: SIM401`
+        if (  # noqa: SIM401
+            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
+        ):
+            visual_feats = observations[
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
+            ]
+        else:
+            visual_feats = self.visual_encoder(observations)
 
-            if ClipImageGoalSensor.cls_uuid in observations:
-                clip_image_goal = visual_feats[:, :1024]
-                visual_feats = self.visual_fc(visual_feats[:, 1024:])
-            else:
-                visual_feats = self.visual_fc(visual_feats)
+        visual_feats = self.visual_fc(visual_feats)
+        object_goal = observations[ClipObjectGoalSensor.cls_uuid]
 
-            aux_loss_state["perception_embed"] = visual_feats
-            x.append(visual_feats)
+        if self._fusion_type.xattn:
+            visual_feats = self.cross_attention(object_goal, visual_feats)
 
-        if ObjectGoalSensor.cls_uuid in observations:
-            object_goal = observations[ObjectGoalSensor.cls_uuid].long()
-            x.append(self.obj_categories_embedding(object_goal).squeeze(dim=1))
+        x = [visual_feats]
 
-        if ClipObjectGoalSensor.cls_uuid in observations and not self.late_fusion:
-            object_goal = observations[ClipObjectGoalSensor.cls_uuid]
-            if self.add_clip_linear_projection:
-                object_goal = self.obj_categories_embedding(object_goal)
+        if self._fusion_type.concat and not self._fusion_type.late_fusion:
             x.append(object_goal)
-
-        if ClipImageGoalSensor.cls_uuid in observations and not self.late_fusion:
-            assert clip_image_goal is not None
-            if self.add_clip_linear_projection:
-                clip_image_goal = self.obj_categories_embedding(clip_image_goal)
-            x.append(clip_image_goal)
-
-        if ClipGoalSelectorSensor.cls_uuid in observations:
-            assert (
-                ClipObjectGoalSensor.cls_uuid in observations
-                and ClipImageGoalSensor.cls_uuid in observations
-            ), "Must have both object and image goals to use goal selector."
-            image_goal_embedding = x.pop()
-            object_goal = x.pop()
-            assert image_goal_embedding.shape == object_goal.shape
-            clip_goal = torch.where(
-                observations[ClipGoalSelectorSensor.cls_uuid].bool(),
-                image_goal_embedding,
-                object_goal,
-            )
-            x.append(clip_goal)
 
         if EpisodicCompassSensor.cls_uuid in observations:
             compass_observations = torch.stack(
@@ -370,278 +384,13 @@ class PointNavResNetCLIPNet(Net):
         out, rnn_hidden_states = self.state_encoder(
             out, rnn_hidden_states, masks, rnn_build_seq_info
         )
-        aux_loss_state["rnn_output"] = out
 
-        if self.late_fusion:
-            object_goal = observations[ClipObjectGoalSensor.cls_uuid]
-            out = (out + visual_feats) * object_goal
+        if self._fusion_type.late_fusion:
+            out = (out + visual_feats) * self.late_fusion_fc(object_goal)
+
+        aux_loss_state = {
+            "rnn_output": out,
+            "perception_embed": visual_feats,
+        }
 
         return out, rnn_hidden_states, aux_loss_state
-
-
-class ResNetCLIPEncoder(nn.Module):
-    def __init__(
-        self,
-        observation_space: spaces.Dict,
-        backbone_type="attnpool",
-        clip_model="RN50",
-        depth_ckpt: str = "",
-    ):
-        super().__init__()
-
-        self.backbone_type = backbone_type
-        self.rgb = "rgb" in observation_space.spaces
-        self.depth = "depth" in observation_space.spaces
-
-        if not self.is_blind:
-            model, preprocess = clip.load(clip_model)
-
-            # expected input: H x W x C (np.uint8 in [0-255])
-            if (
-                observation_space.spaces["rgb"].shape[0] != 224
-                or observation_space.spaces["rgb"].shape[1] != 224
-            ):
-                print("Using CLIP preprocess for resizing+cropping to 224x224")
-                preprocess_transforms = [
-                    # resize and center crop to 224
-                    preprocess.transforms[0],
-                    preprocess.transforms[1],
-                ]
-            else:
-                preprocess_transforms = []
-            preprocess_transforms.extend(
-                [
-                    # already tensor, but want float
-                    T.ConvertImageDtype(torch.float),
-                    # normalize with CLIP mean, std
-                    preprocess.transforms[4],
-                ]
-            )
-            self.preprocess = T.Compose(preprocess_transforms)
-            # expected output: H x W x C (np.float32)
-
-            self.backbone = model.visual
-
-            assert self.rgb
-
-            if self.depth:
-                assert depth_ckpt != ""
-                self.depth_backbone = copy_depth_encoder(depth_ckpt)
-                depth_size = 512
-            else:
-                self.depth_backbone = None
-                depth_size = 0
-            if "none" in backbone_type:
-                self.backbone.attnpool = nn.Identity()
-                self.output_shape = (2048, 7, 7)
-            elif self.using_both_clip_avg_attn_pool:
-                # Adds an avg pooling head in parallel to final attention layer
-                self.backbone.adaptive_avgpool = nn.Sequential(
-                    nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten()
-                )
-                self.output_shape = (1024 + 2048,)  # attnpool + avgpool
-
-                # Overwrite forward method to return both attnpool and avgpool
-                # concatenated together (attnpool + avgpool).
-                bound_method = forward_avg_attn_pool.__get__(
-                    self.backbone, self.backbone.__class__
-                )
-                setattr(self.backbone, "forward", bound_method)
-            elif self.using_only_clip_avgpool:
-                self.backbone.attnpool = nn.Sequential(
-                    nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten()
-                )
-                self.output_shape = (2048 + depth_size,)
-            elif self.using_only_clip_attnpool:
-                self.output_shape = (1024 + depth_size,)
-                if ClipImageGoalSensor.cls_uuid in observation_space.spaces:
-                    self.output_shape = (self.output_shape[0] + 1024,)
-
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-            for module in self.backbone.modules():
-                if "BatchNorm" in type(module).__name__:
-                    module.momentum = 0.0
-            self.backbone.eval()
-
-            if self.depth:
-                for param in self.depth_backbone.parameters():
-                    param.requires_grad = False
-                self.depth_backbone.eval()
-
-    @property
-    def is_blind(self):
-        return self.rgb is False and self.depth is False
-
-    def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
-        cnn_input = []
-        if ClipImageGoalSensor.cls_uuid in observations:
-            # Stack them into the same batch
-            rgb_observations = torch.cat(
-                [
-                    observations["rgb"],
-                    observations[ClipImageGoalSensor.cls_uuid],
-                ],
-                dim=0,
-            )
-        else:
-            rgb_observations = observations["rgb"]
-
-        rgb_observations = rgb_observations.permute(
-            0, 3, 1, 2
-        )  # BATCH x CHANNEL x HEIGHT X WIDTH
-        rgb_observations = torch.stack(
-            [self.preprocess(rgb_image) for rgb_image in rgb_observations]
-        )  # [BATCH x CHANNEL x HEIGHT X WIDTH] in torch.float32
-        rgb_x = self.backbone(rgb_observations)
-
-        if ClipImageGoalSensor.cls_uuid in observations:
-            # Split them back out
-            if self.using_both_clip_avg_attn_pool:
-                rgb_x, goal_x = rgb_x
-            else:
-                rgb_x, goal_x = rgb_x[:, :-1024], rgb_x[:, -1024:]
-            cnn_input.append(goal_x.type(torch.float32))
-
-        cnn_input.append(rgb_x.type(torch.float32))
-
-        if self.depth and "depth" in observations:
-            depth_feats = self.depth_backbone({"depth": observations["depth"]})
-            cnn_input.append(depth_feats)
-
-        x = torch.cat(cnn_input, dim=1)
-
-        return x
-
-    @property
-    def using_only_clip_attnpool(self):
-        return "attnpool" in self.backbone_type
-
-    @property
-    def using_only_clip_avgpool(self):
-        return "avgpool" in self.backbone_type
-
-    @property
-    def using_both_clip_avg_attn_pool(self):
-        return "avgattnpool" in self.backbone_type
-
-
-class ResNet18DepthEncoder(nn.Module):
-    def __init__(self, depth_encoder, visual_fc):
-        super().__init__()
-        self.encoder = depth_encoder
-        self.visual_fc = visual_fc
-
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.visual_fc(x)
-        return x
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        # TODO: allow dicts trained with both attn and avg pool to be loaded
-        ignore_attnpool = False
-        if ignore_attnpool:
-            pass
-        return super().load_state_dict(state_dict, strict=strict)
-
-
-def copy_depth_encoder(depth_ckpt):
-    """
-    Returns an encoder that stacks the encoder and visual_fc of the provided
-    depth checkpoint
-    :param depth_ckpt: path to a resnet18 depth pointnav policy
-    :return: nn.Module representing the backbone of the depth policy
-    """
-    # Initialize encoder and fc layers
-    base_planes = 32
-    ngroups = 32
-    spatial_size = 128
-
-    observation_space = SpaceDict(
-        {
-            "depth": spaces.Box(
-                low=0.0, high=1.0, shape=(256, 256, 1), dtype=np.float32
-            ),
-        }
-    )
-    depth_encoder = ResNetEncoder(
-        observation_space,
-        base_planes,
-        ngroups,
-        spatial_size,
-        make_backbone=resnet18,
-    )
-
-    flat_output_shape = 2048
-    hidden_size = 512
-    visual_fc = nn.Sequential(
-        nn.Flatten(),
-        nn.Linear(flat_output_shape, hidden_size),
-        nn.ReLU(True),
-    )
-
-    pretrained_state = torch.load(depth_ckpt, map_location="cpu")
-
-    # Load weights into depth encoder
-    depth_encoder_state_dict = {
-        k[len("actor_critic.net.visual_encoder.") :]: v
-        for k, v in pretrained_state["state_dict"].items()
-        if k.startswith("actor_critic.net.visual_encoder.")
-    }
-    depth_encoder.load_state_dict(depth_encoder_state_dict)
-
-    # Load weights in fc layers
-    visual_fc_state_dict = {
-        k[len("actor_critic.net.visual_fc.") :]: v
-        for k, v in pretrained_state["state_dict"].items()
-        if k.startswith("actor_critic.net.visual_fc.")
-    }
-    visual_fc.load_state_dict(visual_fc_state_dict)
-
-    modified_depth_encoder = ResNet18DepthEncoder(depth_encoder, visual_fc)
-
-    return modified_depth_encoder
-
-
-def forward_avg_attn_pool(self, x):
-    """
-    Adapted from https://github.com/openai/CLIP/blob/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1/clip/model.py#L138
-    Expects a batch of images where the batch number is even. The whole batch
-    is passed through all layers except the last layer; the first half of the
-    batch will be passed through avgpool and the second half will be passed
-    through attnpool. The outputs of both pools are concatenated returned.
-    """
-
-    assert hasattr(self, "adaptive_avgpool")
-    assert x.shape[0] % 2 == 0, "Batch size must be even"
-
-    def stem(x):
-        x = self.relu1(self.bn1(self.conv1(x)))
-        x = self.relu2(self.bn2(self.conv2(x)))
-        x = self.relu3(self.bn3(self.conv3(x)))
-        x = self.avgpool(x)
-        return x
-
-    x = x.type(self.conv1.weight.dtype)
-    x = stem(x)
-    x = self.layer1(x)
-    x = self.layer2(x)
-    x = self.layer3(x)
-    x = self.layer4(x)
-    x_avgpool, x_attnpool = x.chunk(2, dim=0)
-    x_avgpool = self.adaptive_avgpool(x_avgpool)
-    x_attnpool = self.attnpool(x_attnpool)
-
-    return x_avgpool, x_attnpool
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str, required=True)
-    args = parser.parse_args()
-    depth_encoder = copy_depth_encoder(args.ckpt)
-    print(depth_encoder)
-    output = depth_encoder({"depth": torch.rand(1, 256, 256, 1)})
-    print("success. output shape: ", output.shape)

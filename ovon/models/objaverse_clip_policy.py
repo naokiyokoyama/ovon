@@ -13,7 +13,7 @@ from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
 
-from ovon.models.clip_policy import ResNetCLIPEncoder
+from ovon.models.encoders.clip_encoder import ResNetCLIPEncoder
 from ovon.task.sensors import ClipObjectGoalSensor
 
 

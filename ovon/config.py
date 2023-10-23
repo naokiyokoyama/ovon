@@ -126,6 +126,10 @@ class OVONPolicyConfig(PolicyConfig):
     depth_ckpt: str = ""
     late_fusion: bool = False
     fusion_type: str = "concat"
+    attn_heads: int = 3
+    use_vis_query: bool = False
+    use_residual: bool = True
+    residual_vision: bool = False
 
     finetune: PolicyFinetuneConfig = PolicyFinetuneConfig()
 

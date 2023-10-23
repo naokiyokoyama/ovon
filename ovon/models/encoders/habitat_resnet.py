@@ -6,7 +6,7 @@ import torch.nn as nn
 from habitat_baselines.rl.ddppo.policy.resnet_policy import ResNetEncoder
 
 
-class HabitatResnetEncoder(nn.Module):
+class HabitatResNetEncoder(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.backbone = ResNetEncoder(**kwargs)
