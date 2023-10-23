@@ -1,12 +1,12 @@
+import os
+
 import torch
 from torch import nn
-import os
 
 NUM_HEADS = int(os.environ.get("OVON_XATTN_NUM_HEADS", 12))
 
 
 class CrossAttention(nn.Module):
-
     def __init__(
         self,
         x1_dim: int,
@@ -72,4 +72,3 @@ class CrossAttention(nn.Module):
         output = output.squeeze(0)
 
         return output
-

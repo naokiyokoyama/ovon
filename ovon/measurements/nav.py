@@ -1,4 +1,3 @@
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import numpy as np
@@ -201,13 +200,15 @@ class FailureModeMeasure(Measure):
             }
 
             metrics["area_seen"] = self._max_area
-            if not is_success:        
+            if not is_success:
                 if self._goal_seen:
                     if task.is_stop_called:
                         metrics["stop_too_far"] = True
                     else:
                         metrics["stop_failure"] = self._reached_within_success_area
-                        metrics["recognition_failure"] = not self._reached_within_success_area
+                        metrics["recognition_failure"] = (
+                            not self._reached_within_success_area
+                        )
                 else:
                     if task.is_stop_called:
                         metrics["misidentification"] = True

@@ -37,19 +37,31 @@ from habitat.utils.render_wrapper import overlay_frame
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
-    get_active_obs_transforms)
+    apply_obs_transforms_batch,
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter
 from habitat_baselines.rl.ddppo.algo import DDPPO
-from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, load_resume_state,
-                                                  rank0_only, requeue_job,
-                                                  save_resume_state)
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    EXIT,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
 from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
-    PointNavResNetNet, PointNavResNetPolicy)
+    PointNavResNetNet,
+    PointNavResNetPolicy,
+)
 from habitat_baselines.rl.ppo import PPO
-from habitat_baselines.utils.common import (batch_obs, generate_video,
-                                            get_num_actions, inference_mode,
-                                            is_continuous_action_space)
+from habitat_baselines.utils.common import (
+    batch_obs,
+    generate_video,
+    get_num_actions,
+    inference_mode,
+    is_continuous_action_space,
+)
 from omegaconf import OmegaConf
 from torch import nn
 
@@ -703,7 +715,6 @@ class VERPIRLNavTrainer(VERTrainer):
         for k, v in metrics.items():
             writer.add_scalar(f"eval_metrics/{k}", v, step_id)
 
-        
         print("OVON json: {}".format(os.environ.get("OVON_EPISODES_JSON", None)))
 
         if os.environ.get("OVON_EPISODES_JSON", "") != "":
