@@ -16,7 +16,7 @@ from torchvision import transforms as T
 
 from ovon.models.encoders.cross_attention import CrossAttention
 from ovon.models.encoders.dinov2_encoder import DINOV2Encoder
-from ovon.models.encoders.habitat_resnet import HabitatResnetEncoder
+from ovon.models.encoders.habitat_resnet import HabitatResNetEncoder
 from ovon.models.encoders.vc1_encoder import VC1Encoder
 from ovon.models.encoders.visual_encoder import VisualEncoder
 from ovon.models.encoders.visual_encoder_v2 import VisualEncoder as VisualEncoderV2
@@ -136,7 +136,7 @@ class OVRLPolicyNet(Net):
                 }
             )
 
-            self.visual_encoder = HabitatResnetEncoder(
+            self.visual_encoder = HabitatResNetEncoder(
                 observation_space=use_obs_space,
                 baseplanes=resnet_baseplanes,
                 ngroups=resnet_baseplanes // 2,
