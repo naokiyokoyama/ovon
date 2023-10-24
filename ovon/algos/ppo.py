@@ -119,8 +119,6 @@ class PPO(nn.Module):
                 state_encoder_params.append(param)
                 whitelisted_names.append(name)
 
-        import pdb; pdb.set_trace()
-
         params = [
             {
                 "params": list(
