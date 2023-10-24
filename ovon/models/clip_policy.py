@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -7,7 +7,8 @@ from gym import spaces
 from habitat.tasks.nav.nav import EpisodicCompassSensor, EpisodicGPSSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import build_rnn_state_encoder
+from habitat_baselines.rl.models.rnn_state_encoder import \
+    build_rnn_state_encoder
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
@@ -16,6 +17,9 @@ from ovon.models.encoders.cma_xattn import CrossModalAttention
 from ovon.models.encoders.cross_attention import CrossAttention
 from ovon.models.encoders.make_encoder import make_encoder
 from ovon.task.sensors import ClipObjectGoalSensor
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
 
 class FusionType:
@@ -162,11 +166,39 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             param.requires_grad_(True)
 
     def freeze_state_encoder(self):
-        for param in self.net.state_encoder.parameters():
+        state_encoder_params = []
+        blacklisted_layers = ["visual_encoder", "action_distribution", "critic"]
+
+        whitelisted_names = []
+        for name, param in self.net.named_parameters():
+            is_blacklisted = False
+            for layer in blacklisted_layers:
+                if layer in name:
+                    is_blacklisted = True
+                    break
+            if not is_blacklisted:
+                state_encoder_params.append(param)
+                whitelisted_names.append(name)
+
+        for param in state_encoder_params:
             param.requires_grad_(False)
 
     def unfreeze_state_encoder(self):
-        for param in self.net.state_encoder.parameters():
+        state_encoder_params = []
+        blacklisted_layers = ["visual_encoder", "action_distribution", "critic"]
+
+        whitelisted_names = []
+        for name, param in self.net.named_parameters():
+            is_blacklisted = False
+            for layer in blacklisted_layers:
+                if layer in name:
+                    is_blacklisted = True
+                    break
+            if not is_blacklisted:
+                state_encoder_params.append(param)
+                whitelisted_names.append(name)
+
+        for param in state_encoder_params:
             param.requires_grad_(True)
 
     def freeze_actor(self):
@@ -226,9 +258,7 @@ class OVONNet(Net):
             if backbone == "resnet":
                 self.visual_fc = nn.Sequential(
                     nn.Flatten(),
-                    nn.Linear(
-                        np.prod(self.visual_encoder.output_shape), hidden_size
-                    ),
+                    nn.Linear(np.prod(self.visual_encoder.output_shape), hidden_size),
                     nn.ReLU(True),
                 )
             else:

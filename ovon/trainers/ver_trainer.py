@@ -42,7 +42,6 @@ from habitat_baselines.common.obs_transformers import (
     get_active_obs_transforms,
 )
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter
-from habitat_baselines.rl.ddppo.algo import DDPPO
 from habitat_baselines.rl.ddppo.ddp_utils import (
     EXIT,
     load_resume_state,
@@ -54,7 +53,6 @@ from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
     PointNavResNetNet,
     PointNavResNetPolicy,
 )
-from habitat_baselines.rl.ppo import PPO
 from habitat_baselines.utils.common import (
     batch_obs,
     generate_video,

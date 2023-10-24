@@ -93,6 +93,20 @@ class PPO(nn.Module):
 
         self.use_normalized_advantage = use_normalized_advantage
 
+        state_encoder_params = []
+        blacklisted_layers = ["visual_encoder", "action_distribution", "critic"]
+
+        whitelisted_names = []
+        for name, param in actor_critic.named_parameters():
+            is_blacklisted = False
+            for layer in blacklisted_layers:
+                if layer in name:
+                    is_blacklisted = True
+                    break
+            if not is_blacklisted:
+                state_encoder_params.append(param)
+                whitelisted_names.append(name)
+
         params = [
             {
                 "params": list(
@@ -105,7 +119,7 @@ class PPO(nn.Module):
                 "eps": eps,
             },
             {
-                "params": list(actor_critic.net.state_encoder.parameters()),
+                "params": state_encoder_params,
                 "lr": 0.0,
                 "eps": eps,
             },
