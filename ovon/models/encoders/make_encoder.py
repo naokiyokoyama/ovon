@@ -4,7 +4,6 @@ from gym import spaces
 
 from ovon.models.encoders.clip_encoder import ResNetCLIPEncoder
 from ovon.models.encoders.dinov2_encoder import DINOV2Encoder
-# from ovon.models.encoders.habitat_resnet import HabitatResNetEncoder
 from ovon.models.encoders.vc1_encoder import VC1Encoder
 
 POSSIBLE_ENCODERS = [
