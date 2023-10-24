@@ -166,7 +166,16 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
     def freeze_state_encoder(self):
         state_encoder_params = []
-        blacklisted_layers = ["visual_encoder", "action_distribution", "critic"]
+        blacklisted_layers = [
+            "visual_encoder",
+            "action_distribution",
+            "critic",
+            "visual_fc",
+            "gps_embedding",
+            "compass_embedding",
+            "cross_attention",
+            "prev_action_embedding"
+        ]
 
         whitelisted_names = []
         for name, param in self.net.named_parameters():
@@ -184,7 +193,16 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
     def unfreeze_state_encoder(self):
         state_encoder_params = []
-        blacklisted_layers = ["visual_encoder", "action_distribution", "critic"]
+        blacklisted_layers = [
+            "visual_encoder",
+            "action_distribution",
+            "critic",
+            "visual_fc",
+            "gps_embedding",
+            "compass_embedding",
+            "cross_attention",
+            "prev_action_embedding"
+        ]
 
         whitelisted_names = []
         for name, param in self.net.named_parameters():
@@ -199,6 +217,21 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
         for param in state_encoder_params:
             param.requires_grad_(True)
+
+    def freeze_new_params(self):
+        state_encoder_params = []
+        whitelisted_layers = ["gps_embedding", "compass_embedding", "cross_attention", "prev_action_embedding"]
+
+        whitelisted_names = []
+        for name, param in self.net.named_parameters():
+            for layer in whitelisted_layers:
+                if layer in name:
+                    state_encoder_params.append(param)
+                    whitelisted_names.append(name)
+                    break
+
+        for param in state_encoder_params:
+            param.requires_grad_(False)
 
     def freeze_actor(self):
         for param in self.action_distribution.parameters():

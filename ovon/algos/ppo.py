@@ -17,7 +17,8 @@ from habitat_baselines.common.rollout_storage import RolloutStorage
 from habitat_baselines.rl.ddppo.algo.ddppo import DecentralizedDistributedMixin
 from habitat_baselines.rl.ppo.policy import NetPolicy
 from habitat_baselines.rl.ver.ver_rollout_storage import VERRolloutStorage
-from habitat_baselines.utils.common import LagrangeInequalityCoefficient, inference_mode
+from habitat_baselines.utils.common import (LagrangeInequalityCoefficient,
+                                            inference_mode)
 from torch import Tensor
 
 EPS_PPO = 1e-5
@@ -94,7 +95,16 @@ class PPO(nn.Module):
         self.use_normalized_advantage = use_normalized_advantage
 
         state_encoder_params = []
-        blacklisted_layers = ["visual_encoder", "action_distribution", "critic"]
+        blacklisted_layers = [
+            "visual_encoder",
+            "action_distribution",
+            "critic",
+            "visual_fc",
+            "gps_embedding",
+            "compass_embedding",
+            "cross_attention",
+            "prev_action_embedding"
+        ]
 
         whitelisted_names = []
         for name, param in actor_critic.named_parameters():
