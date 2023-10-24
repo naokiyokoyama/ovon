@@ -17,8 +17,7 @@ from habitat_baselines.common.rollout_storage import RolloutStorage
 from habitat_baselines.rl.ddppo.algo.ddppo import DecentralizedDistributedMixin
 from habitat_baselines.rl.ppo.policy import NetPolicy
 from habitat_baselines.rl.ver.ver_rollout_storage import VERRolloutStorage
-from habitat_baselines.utils.common import (LagrangeInequalityCoefficient,
-                                            inference_mode)
+from habitat_baselines.utils.common import LagrangeInequalityCoefficient, inference_mode
 from torch import Tensor
 
 EPS_PPO = 1e-5
@@ -103,7 +102,7 @@ class PPO(nn.Module):
             "gps_embedding",
             "compass_embedding",
             "cross_attention",
-            "prev_action_embedding"
+            "prev_action_embedding",
         ]
         if actor_critic.unfreeze_xattn:
             blacklisted_layers.remove("cross_attention")

@@ -178,7 +178,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             "gps_embedding",
             "compass_embedding",
             "cross_attention",
-            "prev_action_embedding"
+            "prev_action_embedding",
         ]
         if self.unfreeze_xattn:
             blacklisted_layers.remove("cross_attention")
@@ -208,7 +208,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             "gps_embedding",
             "compass_embedding",
             "cross_attention",
-            "prev_action_embedding"
+            "prev_action_embedding",
         ]
         if self.unfreeze_xattn:
             blacklisted_layers.remove("cross_attention")
@@ -230,7 +230,12 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
     def freeze_new_params(self):
         state_encoder_params = []
-        whitelisted_layers = ["gps_embedding", "compass_embedding", "cross_attention", "prev_action_embedding"]
+        whitelisted_layers = [
+            "gps_embedding",
+            "compass_embedding",
+            "cross_attention",
+            "prev_action_embedding",
+        ]
         if self.unfreeze_xattn:
             whitelisted_layers.remove("cross_attention")
 
