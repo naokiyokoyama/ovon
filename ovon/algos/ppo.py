@@ -105,6 +105,8 @@ class PPO(nn.Module):
             "cross_attention",
             "prev_action_embedding"
         ]
+        if actor_critic.unfreeze_xattn:
+            blacklisted_layers.remove("cross_attention")
 
         whitelisted_names = []
         for name, param in actor_critic.named_parameters():
@@ -116,6 +118,8 @@ class PPO(nn.Module):
             if not is_blacklisted:
                 state_encoder_params.append(param)
                 whitelisted_names.append(name)
+
+        import pdb; pdb.set_trace()
 
         params = [
             {

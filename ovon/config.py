@@ -2,17 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from habitat.config.default_structured_configs import (
-    CollisionsMeasurementConfig,
-    HabitatConfig,
-    LabSensorConfig,
-    MeasurementConfig,
-    SimulatorConfig,
-)
+    CollisionsMeasurementConfig, HabitatConfig, LabSensorConfig,
+    MeasurementConfig, SimulatorConfig)
 from habitat_baselines.config.default_structured_configs import (
-    HabitatBaselinesRLConfig,
-    PolicyConfig,
-    RLConfig,
-)
+    HabitatBaselinesRLConfig, PolicyConfig, RLConfig)
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
@@ -130,6 +123,8 @@ class OVONPolicyConfig(PolicyConfig):
     use_vis_query: bool = False
     use_residual: bool = True
     residual_vision: bool = False
+
+    unfreeze_xattn: bool = False
 
     finetune: PolicyFinetuneConfig = PolicyFinetuneConfig()
 

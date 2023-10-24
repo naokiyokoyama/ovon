@@ -69,8 +69,10 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         use_vis_query: bool = False,
         use_residual: bool = True,
         residual_vision: bool = False,
+        unfreeze_xattn: bool = False,
         **kwargs,
     ):
+        self.unfreeze_xattn = unfreeze_xattn
         if policy_config is not None:
             discrete_actions = policy_config.action_distribution_type == "categorical"
             self.action_distribution_type = policy_config.action_distribution_type
@@ -135,6 +137,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         residual_vision = config.habitat_baselines.rl.policy.get(
             "residual_vision", False
         )
+        unfreeze_xattn = config.habitat_baselines.rl.policy.get("unfreeze_xattn", False)
         return cls(
             observation_space=filtered_obs,
             action_space=action_space,
@@ -150,6 +153,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             use_vis_query=use_vis_query,
             use_residual=use_residual,
             residual_vision=residual_vision,
+            unfreeze_xattn=unfreeze_xattn,
         )
 
     def freeze_visual_encoders(self):
@@ -176,6 +180,8 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             "cross_attention",
             "prev_action_embedding"
         ]
+        if self.unfreeze_xattn:
+            blacklisted_layers.remove("cross_attention")
 
         whitelisted_names = []
         for name, param in self.net.named_parameters():
@@ -190,6 +196,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
         for param in state_encoder_params:
             param.requires_grad_(False)
+        print("freze", whitelisted_names)
 
     def unfreeze_state_encoder(self):
         state_encoder_params = []
@@ -203,6 +210,8 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             "cross_attention",
             "prev_action_embedding"
         ]
+        if self.unfreeze_xattn:
+            blacklisted_layers.remove("cross_attention")
 
         whitelisted_names = []
         for name, param in self.net.named_parameters():
@@ -217,10 +226,13 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
         for param in state_encoder_params:
             param.requires_grad_(True)
+        print("unf", whitelisted_names)
 
     def freeze_new_params(self):
         state_encoder_params = []
         whitelisted_layers = ["gps_embedding", "compass_embedding", "cross_attention", "prev_action_embedding"]
+        if self.unfreeze_xattn:
+            whitelisted_layers.remove("cross_attention")
 
         whitelisted_names = []
         for name, param in self.net.named_parameters():
@@ -232,6 +244,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
 
         for param in state_encoder_params:
             param.requires_grad_(False)
+        print("fnew", whitelisted_names)
 
     def freeze_actor(self):
         for param in self.action_distribution.parameters():
