@@ -10,32 +10,37 @@ from habitat.utils import profiling_wrapper
 from habitat_baselines import PPOTrainer
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
-    get_active_obs_transforms)
-from habitat_baselines.common.tensorboard_utils import (TensorboardWriter,
-                                                        get_writer)
-from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, get_distrib_size,
-                                                  init_distrib_slurm,
-                                                  is_slurm_batch_job,
-                                                  load_resume_state,
-                                                  rank0_only, requeue_job,
-                                                  save_resume_state)
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
+from habitat_baselines.common.tensorboard_utils import get_writer
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    EXIT,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.utils.common import (batch_obs, inference_mode,
-                                            is_continuous_action_space)
+from habitat_baselines.utils.common import (
+    inference_mode,
+    is_continuous_action_space,
+)
 from omegaconf import DictConfig
 from torch.optim.lr_scheduler import LambdaLR
 
-from ovon.trainers.transformer_ppo import (DistributedMinimalTransformerPPO,
-                                           MinimalTransformerPPO)
+from ovon.trainers.transformer_ppo import (
+    DistributedMinimalTransformerPPO,
+    MinimalTransformerPPO,
+)
 from ovon.trainers.transformer_storage import (
-    MinimalTransformerRolloutStorage, TransformerRolloutStorage)
+    MinimalTransformerRolloutStorage,
+)
 
 
 @baseline_registry.register_trainer(name="transformer_ddppo")
 @baseline_registry.register_trainer(name="transformer_ppo")
 class TransformerTrainer(PPOTrainer):
-
     def _setup_actor_critic_agent(self, ppo_cfg: "DictConfig") -> None:
         r"""Sets up actor critic and agent for PPO.
 
@@ -100,9 +105,11 @@ class TransformerTrainer(PPOTrainer):
             nn.init.orthogonal_(self.actor_critic.critic.fc.weight)
             nn.init.constant_(self.actor_critic.critic.fc.bias, 0)
 
-        self.agent = (DistributedMinimalTransformerPPO if self._is_distributed else MinimalTransformerPPO).from_config(
-            self.actor_critic, ppo_cfg
-        )
+        self.agent = (
+            DistributedMinimalTransformerPPO
+            if self._is_distributed
+            else MinimalTransformerPPO
+        ).from_config(self.actor_critic, ppo_cfg)
 
     def _init_train(self, *args, **kwargs):
         super()._init_train(*args, **kwargs)
@@ -110,7 +117,7 @@ class TransformerTrainer(PPOTrainer):
         ppo_cfg = self.config.habitat_baselines.rl.ppo
         action_shape = self.rollouts.buffers["actions"].shape[2:]
         discrete_actions = self.rollouts.buffers["actions"].dtype == torch.long
-        batch = self.rollouts.buffers["observations"][0]
+        self.rollouts.buffers["observations"][0]
 
         obs_space = spaces.Dict(
             {
@@ -146,17 +153,13 @@ class TransformerTrainer(PPOTrainer):
 
         with inference_mode():
             # Sample actions
-            step_batch = self.rollouts.get_current_step(
-                env_slice, buffer_index
-            )
+            step_batch = self.rollouts.get_current_step(env_slice, buffer_index)
 
             profiling_wrapper.range_push("compute actions")
 
             # Obtain lenghts
             step_batch_lens = {
-                k: v
-                for k, v in step_batch.items()
-                if k.startswith("index_len")
+                k: v for k, v in step_batch.items() if k.startswith("index_len")
             }
             (
                 values,
@@ -202,9 +205,7 @@ class TransformerTrainer(PPOTrainer):
         with inference_mode():
             step_batch = self.rollouts.get_last_step()
             step_batch_lens = {
-                k: v
-                for k, v in step_batch.items()
-                if k.startswith("index_len")
+                k: v for k, v in step_batch.items() if k.startswith("index_len")
             }
 
             next_value = self.actor_critic.get_value(
@@ -260,16 +261,12 @@ class TransformerTrainer(PPOTrainer):
             self.pth_time = requeue_stats["pth_time"]
             self.num_steps_done = requeue_stats["num_steps_done"]
             self.num_updates_done = requeue_stats["num_updates_done"]
-            self._last_checkpoint_percent = requeue_stats[
-                "_last_checkpoint_percent"
-            ]
+            self._last_checkpoint_percent = requeue_stats["_last_checkpoint_percent"]
             count_checkpoints = requeue_stats["count_checkpoints"]
             prev_time = requeue_stats["prev_time"]
 
             self.running_episode_stats = requeue_stats["running_episode_stats"]
-            self.window_episode_stats.update(
-                requeue_stats["window_episode_stats"]
-            )
+            self.window_episode_stats.update(requeue_stats["window_episode_stats"])
             resume_run_id = requeue_stats.get("run_id", None)
 
         ppo_cfg = self.config.habitat_baselines.rl.ppo
@@ -351,9 +348,7 @@ class TransformerTrainer(PPOTrainer):
 
                         if not is_last_step:
                             if (buffer_index + 1) == self._nbuffers:
-                                profiling_wrapper.range_push(
-                                    "_collect_rollout_step"
-                                )
+                                profiling_wrapper.range_push("_collect_rollout_step")
 
                             self._compute_actions_and_step_envs(buffer_index)
 
@@ -369,22 +364,28 @@ class TransformerTrainer(PPOTrainer):
 
                 if ppo_cfg.use_linear_lr_decay:
                     lr_scheduler.step()  # type: ignore
-                
+
                 if self.rollouts.context_length > 0:
                     with torch.inference_mode():
                         for i in range(self.envs.num_envs):
                             batch = self.rollouts.get_context_step(env_id=i)
 
-                            value_preds, recurrent_hidden_states = self.actor_critic.get_value(
-                                batch["observations"], 
-                                None, 
-                                batch["prev_actions"], 
-                                batch["masks"], 
-                                batch["rnn_build_seq_info"], 
-                                full_rnn_state=True
+                            value_preds, recurrent_hidden_states = (
+                                self.actor_critic.get_value(
+                                    batch["observations"],
+                                    None,
+                                    batch["prev_actions"],
+                                    batch["masks"],
+                                    batch["rnn_build_seq_info"],
+                                    full_rnn_state=True,
+                                )
                             )
-                            value_preds = value_preds.unflatten(0, tuple(batch["rnn_build_seq_info"]["dims"]))
-                            self.rollouts.update_context_data(value_preds, recurrent_hidden_states, env_id=i)
+                            value_preds = value_preds.unflatten(
+                                0, tuple(batch["rnn_build_seq_info"]["dims"])
+                            )
+                            self.rollouts.update_context_data(
+                                value_preds, recurrent_hidden_states, env_id=i
+                            )
 
                 self.num_updates_done += 1
                 losses = self._coalesce_post_step(

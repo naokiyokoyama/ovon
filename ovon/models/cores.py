@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from habitat_baselines.utils.timing import g_timer
-
 from habitat_transformers.policies.transformer_storage import (
     ATT_MASK_K,
     FETCH_BEFORE_COUNTS_K,
@@ -82,7 +81,6 @@ class TransformerPolicyCore(PolicyCore):
         self._context_window = None
         self._att_mask = None
 
-        resnet_baseplanes = 32
 
         self.vis_encoder_net = Vc1Wrapper(
             self._im_obs_space, config.vc1_use_b16
@@ -398,9 +396,8 @@ def reverse_hidden_window(hidden_window, att_masks):
     sub_hidden_windows = []
     final_step_idxs = []
     for batch_idx in range(batch_size):
-        batch_att_masks = att_masks[batch_idx]
+        att_masks[batch_idx]
         did_hit_true = False
-        did_hit_false = False
         ep_start_idx = None
 
         for step_idx in range(context_len):

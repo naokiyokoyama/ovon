@@ -28,11 +28,21 @@ from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.llama.modeling_llama import (
-    LlamaDecoderLayer, LlamaDynamicNTKScalingRotaryEmbedding,
-    LlamaLinearScalingRotaryEmbedding, LlamaMLP, LlamaRMSNorm,
-    LlamaRotaryEmbedding, _make_causal_mask, apply_rotary_pos_emb, repeat_kv)
-from transformers.utils import (add_start_docstrings,
-                                add_start_docstrings_to_model_forward, logging)
+    LlamaDecoderLayer,
+    LlamaDynamicNTKScalingRotaryEmbedding,
+    LlamaLinearScalingRotaryEmbedding,
+    LlamaMLP,
+    LlamaRMSNorm,
+    LlamaRotaryEmbedding,
+    _make_causal_mask,
+    apply_rotary_pos_emb,
+    repeat_kv,
+)
+from transformers.utils import (
+    add_start_docstrings,
+    add_start_docstrings_to_model_forward,
+    logging,
+)
 
 from .configuration_llamarl import LlamaRLConfig
 
@@ -55,6 +65,7 @@ def create_episodes_mask(
         inverted_mask.to(torch.bool), torch.finfo(dtype).min
     )
 
+
 # from https://github.com/opendilab/DI-engine/blob/6137b5e9ae7947186209bf54d998b922156aa360/ding/torch_utils/network/gtrxl.py#L44
 class GRUGatingUnit(nn.Module):
     """
@@ -62,7 +73,7 @@ class GRUGatingUnit(nn.Module):
         GRU Gating Unit used in GTrXL.
     """
 
-    def __init__(self, input_dim: int, bg: float = 2.):
+    def __init__(self, input_dim: int, bg: float = 2.0):
         """
         Arguments:
             - input_dim: (:obj:`int`): dimension of input.
@@ -94,7 +105,9 @@ class GRUGatingUnit(nn.Module):
         """
         r = self.sigmoid(self.Wr(y) + self.Ur(x))
         z = self.sigmoid(self.Wz(y) + self.Uz(x) - self.bg)
-        h = self.tanh(self.Wg(y) + self.Ug(torch.mul(r, x)))  # element wise multiplication
+        h = self.tanh(
+            self.Wg(y) + self.Ug(torch.mul(r, x))
+        )  # element wise multiplication
         g = torch.mul(1 - z, x) + torch.mul(z, h)
         return g  # x.shape == y.shape == g.shape
 
@@ -114,13 +127,21 @@ class LlamaRLAttention(nn.Module):
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
-                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                f" and `num_heads`: {self.num_heads})."
+                "hidden_size must be divisible by num_heads (got `hidden_size`:"
+                f" {self.hidden_size} and `num_heads`: {self.num_heads})."
             )
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
+        self.q_proj = nn.Linear(
+            self.hidden_size, self.num_heads * self.head_dim, bias=False
+        )
+        self.k_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        )
+        self.v_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim, self.hidden_size, bias=False
+        )
 
         self.position_embed_type = config.position_embed_type
         if self.position_embed_type == "rope":
@@ -128,23 +149,33 @@ class LlamaRLAttention(nn.Module):
 
     def _init_rope(self):
         if self.config.rope_scaling is None:
-            self.rotary_emb = LlamaRotaryEmbedding(self.head_dim, max_position_embeddings=self.max_position_embeddings)
+            self.rotary_emb = LlamaRotaryEmbedding(
+                self.head_dim, max_position_embeddings=self.max_position_embeddings
+            )
         else:
             scaling_type = self.config.rope_scaling["type"]
             scaling_factor = self.config.rope_scaling["factor"]
             if scaling_type == "linear":
                 self.rotary_emb = LlamaLinearScalingRotaryEmbedding(
-                    self.head_dim, max_position_embeddings=self.max_position_embeddings, scaling_factor=scaling_factor
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
                 )
             elif scaling_type == "dynamic":
                 self.rotary_emb = LlamaDynamicNTKScalingRotaryEmbedding(
-                    self.head_dim, max_position_embeddings=self.max_position_embeddings, scaling_factor=scaling_factor
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
                 )
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
-        return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
+        return (
+            tensor.view(bsz, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+            .contiguous()
+        )
 
     def forward(
         self,
@@ -158,20 +189,31 @@ class LlamaRLAttention(nn.Module):
         bsz, q_len, _ = hidden_states.size()
 
         if self.config.pretraining_tp > 1:
-            key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
+            key_value_slicing = (
+                self.num_key_value_heads * self.head_dim
+            ) // self.config.pretraining_tp
             query_slices = self.q_proj.weight.split(
                 (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
             )
             key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
             value_slices = self.v_proj.weight.split(key_value_slicing, dim=0)
 
-            query_states = [F.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)]
+            query_states = [
+                F.linear(hidden_states, query_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ]
             query_states = torch.cat(query_states, dim=-1)
 
-            key_states = [F.linear(hidden_states, key_slices[i]) for i in range(self.config.pretraining_tp)]
+            key_states = [
+                F.linear(hidden_states, key_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ]
             key_states = torch.cat(key_states, dim=-1)
 
-            value_states = [F.linear(hidden_states, value_slices[i]) for i in range(self.config.pretraining_tp)]
+            value_states = [
+                F.linear(hidden_states, value_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ]
             value_states = torch.cat(value_states, dim=-1)
 
         else:
@@ -179,9 +221,15 @@ class LlamaRLAttention(nn.Module):
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(
+            bsz, q_len, self.num_heads, self.head_dim
+        ).transpose(1, 2)
+        key_states = key_states.view(
+            bsz, q_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
+        value_states = value_states.view(
+            bsz, q_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -189,7 +237,9 @@ class LlamaRLAttention(nn.Module):
 
         if self.position_embed_type == "rope":
             cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+            query_states, key_states = apply_rotary_pos_emb(
+                query_states, key_states, cos, sin, position_ids
+            )
         elif self.position_embed_type == "linear":
             pass
         else:
@@ -207,31 +257,40 @@ class LlamaRLAttention(nn.Module):
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
         if not output_attentions:
-            attn_output = nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask)
+            attn_output = nn.functional.scaled_dot_product_attention(
+                query_states, key_states, value_states, attn_mask=attention_mask
+            )
         else:
-
-            attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+            attn_weights = torch.matmul(
+                query_states, key_states.transpose(2, 3)
+            ) / math.sqrt(self.head_dim)
 
             if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
                 raise ValueError(
-                    f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
+                    "Attention weights should be of size"
+                    f" {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
                     f" {attn_weights.size()}"
                 )
 
             if attention_mask is not None:
                 if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
                     raise ValueError(
-                        f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
+                        "Attention mask should be of size"
+                        f" {(bsz, 1, q_len, kv_seq_len)}, but is"
+                        f" {attention_mask.size()}"
                     )
                 attn_weights = attn_weights + attention_mask
 
             # upcast attention to fp32
-            attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+            attn_weights = nn.functional.softmax(
+                attn_weights, dim=-1, dtype=torch.float32
+            ).to(query_states.dtype)
             attn_output = torch.matmul(attn_weights, value_states)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
             raise ValueError(
-                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+                "`attn_output` should be of size"
+                f" {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
                 f" {attn_output.size()}"
             )
 
@@ -239,9 +298,18 @@ class LlamaRLAttention(nn.Module):
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
         if self.config.pretraining_tp > 1:
-            attn_output = attn_output.split(self.hidden_size // self.config.pretraining_tp, dim=2)
-            o_proj_slices = self.o_proj.weight.split(self.hidden_size // self.config.pretraining_tp, dim=1)
-            attn_output = sum([F.linear(attn_output[i], o_proj_slices[i]) for i in range(self.config.pretraining_tp)])
+            attn_output = attn_output.split(
+                self.hidden_size // self.config.pretraining_tp, dim=2
+            )
+            o_proj_slices = self.o_proj.weight.split(
+                self.hidden_size // self.config.pretraining_tp, dim=1
+            )
+            attn_output = sum(
+                [
+                    F.linear(attn_output[i], o_proj_slices[i])
+                    for i in range(self.config.pretraining_tp)
+                ]
+            )
         else:
             attn_output = self.o_proj(attn_output)
 
@@ -259,12 +327,13 @@ class LlamaDecoderLayer(nn.Module):
         self.self_attn = LlamaRLAttention(config=config)
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = LlamaRMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
         self.gated_residual = config.gated_residual
         if self.gated_residual:
             self.gate1 = GRUGatingUnit(self.hidden_size)
             self.gate2 = GRUGatingUnit(self.hidden_size)
-
 
     def forward(
         self,
@@ -274,7 +343,9 @@ class LlamaDecoderLayer(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+    ) -> Tuple[
+        torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]
+    ]:
         """
         Args:
             hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
@@ -291,12 +362,13 @@ class LlamaDecoderLayer(nn.Module):
 
         if self.depth_dropout_p > 0 and self.training:
             # TODO: Use config
-            factor = (torch.rand(1, device=hidden_states.device) > self.depth_dropout_p).to(hidden_states.dtype)
+            factor = (
+                torch.rand(1, device=hidden_states.device) > self.depth_dropout_p
+            ).to(hidden_states.dtype)
             mul_factor = 1.0
         else:
             factor = 1.0
             mul_factor = 1.0
-
 
         residual = hidden_states
 
@@ -315,7 +387,7 @@ class LlamaDecoderLayer(nn.Module):
         if self.gated_residual:
             hidden_states = self.gate1(residual, hidden_states)
         else:
-            hidden_states = mul_factor * (residual + factor*hidden_states)
+            hidden_states = mul_factor * (residual + factor * hidden_states)
 
         # Fully Connected
         residual = hidden_states
@@ -325,7 +397,7 @@ class LlamaDecoderLayer(nn.Module):
         if self.gated_residual:
             hidden_states = self.gate2(residual, hidden_states)
         else:
-            hidden_states = mul_factor * (residual + factor*hidden_states)
+            hidden_states = mul_factor * (residual + factor * hidden_states)
 
         outputs = (hidden_states,)
 
@@ -336,7 +408,6 @@ class LlamaDecoderLayer(nn.Module):
             outputs += (present_key_value,)
 
         return outputs
-
 
 
 LLAMARL_START_DOCSTRING = r"""
@@ -357,7 +428,10 @@ LLAMARL_START_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    "The bare LLaMARL Model outputting raw hidden-states without any specific head on top.",
+    (
+        "The bare LLaMARL Model outputting raw hidden-states without any specific head"
+        " on top."
+    ),
     LLAMARL_START_DOCSTRING,
 )
 class LlamaRLPreTrainedModel(PreTrainedModel):
@@ -448,7 +522,10 @@ LLAMARL_INPUTS_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    "The bare LLaMARL Model outputting raw hidden-states without any specific head on top.",
+    (
+        "The bare LLaMARL Model outputting raw hidden-states without any specific head"
+        " on top."
+    ),
     LLAMARL_START_DOCSTRING,
 )
 class LlamaRLModel(LlamaRLPreTrainedModel):
@@ -471,7 +548,7 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
         self.position_embed_type = config.position_embed_type
         if self.position_embed_type == "linear":
             self.embed_pos = nn.Embedding(
-            config.max_position_embeddings, config.hidden_size
+                config.max_position_embeddings, config.hidden_size
             )
         if self.add_sequence_idx_embed:
             self.embed_sequence_pos = nn.Embedding(
@@ -479,10 +556,7 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
             )
 
         self.layers = nn.ModuleList(
-            [
-                LlamaDecoderLayer(config)
-                for _ in range(config.num_hidden_layers)
-            ]
+            [LlamaDecoderLayer(config) for _ in range(config.num_hidden_layers)]
         )
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -504,7 +578,6 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
         inputs_embeds,
         past_key_values_length,
     ):
-        
         dtype = inputs_embeds.dtype
         device = inputs_embeds.device
         # create causal mask
@@ -532,9 +605,14 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
                 )
 
             if self.banded_attention:
-                banded_mask = torch.full((input_shape[0], 1, input_shape[1], input_shape[1]), torch.finfo(dtype).min)
-                banded_mask = torch.triu(banded_mask, diagonal=1) + torch.tril(banded_mask, diagonal=-(self.context_len+1))
-                banded_mask = banded_mask[:, :, -input_shape[-1]:].to(device)
+                banded_mask = torch.full(
+                    (input_shape[0], 1, input_shape[1], input_shape[1]),
+                    torch.finfo(dtype).min,
+                )
+                banded_mask = torch.triu(banded_mask, diagonal=1) + torch.tril(
+                    banded_mask, diagonal=-(self.context_len + 1)
+                )
+                banded_mask = banded_mask[:, :, -input_shape[-1] :].to(device)
 
                 combined_attention_mask = (
                     banded_mask
@@ -543,9 +621,13 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
                 )
 
             if not self.orphan_steps_attention:
-                orphan_mask = (torch.cumsum(1 - attention_mask, dim=1) == 0)[:, None, None].to(dtype)
-                orphan_mask.masked_fill_(orphan_mask.to(torch.bool), torch.finfo(dtype).min)
-                orphan_mask = orphan_mask[:, :, -input_shape[-1]:].to(device)
+                orphan_mask = (torch.cumsum(1 - attention_mask, dim=1) == 0)[
+                    :, None, None
+                ].to(dtype)
+                orphan_mask.masked_fill_(
+                    orphan_mask.to(torch.bool), torch.finfo(dtype).min
+                )
+                orphan_mask = orphan_mask[:, :, -input_shape[-1] :].to(device)
 
                 combined_attention_mask = (
                     orphan_mask
@@ -578,14 +660,10 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
             if output_hidden_states is not None
             else self.config.output_hidden_states
         )
-        use_cache = (
-            use_cache if use_cache is not None else self.config.use_cache
-        )
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
 
         return_dict = (
-            return_dict
-            if return_dict is not None
-            else self.config.use_return_dict
+            return_dict if return_dict is not None else self.config.use_return_dict
         )
 
         # retrieve input_ids and inputs_embeds
@@ -612,16 +690,10 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
 
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
-            seq_length_with_past = (
-                seq_length_with_past + past_key_values_length
-            )
+            seq_length_with_past = seq_length_with_past + past_key_values_length
 
         if position_ids is None and not self.reset_position_index:
-            device = (
-                input_ids.device
-                if input_ids is not None
-                else inputs_embeds.device
-            )
+            device = input_ids.device if input_ids is not None else inputs_embeds.device
             position_ids = torch.arange(
                 past_key_values_length,
                 seq_length + past_key_values_length,
@@ -632,8 +704,7 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
         elif position_ids is None and self.reset_position_index:
             position_ids = torch.tile(
                 torch.arange(
-                    seq_length + past_key_values_length,
-                    device=attention_mask.device
+                    seq_length + past_key_values_length, device=attention_mask.device
                 ),
                 (attention_mask.shape[0], 1),
             )
@@ -649,9 +720,13 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
             sequence_ids = (
                 (
                     torch.cumsum(1 - attention_mask[:, past_key_values_length:], dim=-1)
-                    + (1 - attention_mask[:, :past_key_values_length]).sum(dim=1, keepdim=True)
+                    + (1 - attention_mask[:, :past_key_values_length]).sum(
+                        dim=1, keepdim=True
+                    )
                     - (1 - attention_mask[:, :1])
-                ).to(attention_mask.device).long()
+                )
+                .to(attention_mask.device)
+                .long()
             )
             sequence_embed = self.embed_sequence_pos(sequence_ids)
         else:
@@ -679,7 +754,8 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
 
         if self.gradient_checkpointing and self.training and use_cache:
             logger.warning_once(
-                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
+                "`use_cache=True` is incompatible with gradient checkpointing. Setting"
+                " `use_cache=False`..."
             )
             use_cache = False
 
@@ -701,9 +777,7 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
                 def create_custom_forward(module):
                     def custom_forward(*inputs):
                         # None for past_key_value
-                        return module(
-                            *inputs, past_key_value, output_attentions
-                        )
+                        return module(*inputs, past_key_value, output_attentions)
 
                     return custom_forward
 
@@ -726,9 +800,7 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
             hidden_states = layer_outputs[0]
 
             if use_cache:
-                next_decoder_cache += (
-                    layer_outputs[2 if output_attentions else 1],
-                )
+                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)

@@ -71,12 +71,16 @@ class TransformerWrapper(nn.Module):
         self._non_causal_mask = None
         self.tmp_skip_debug = False
 
-        from habitat.tasks.nav.instance_image_nav_task import \
-            InstanceImageGoalSensor
+        from habitat.tasks.nav.instance_image_nav_task import InstanceImageGoalSensor
         from habitat.tasks.nav.nav import (
-            EpisodicCompassSensor, EpisodicGPSSensor, HeadingSensor,
-            ImageGoalSensor, IntegratedPointGoalGPSAndCompassSensor,
-            PointGoalSensor, ProximitySensor)
+            EpisodicCompassSensor,
+            EpisodicGPSSensor,
+            HeadingSensor,
+            ImageGoalSensor,
+            IntegratedPointGoalGPSAndCompassSensor,
+            PointGoalSensor,
+            ProximitySensor,
+        )
         from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 
         if fuse_keys is None:
@@ -121,9 +125,7 @@ class TransformerWrapper(nn.Module):
         if not self.visual_encoder.is_blind:
             self.visual_fc = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(
-                    np.prod(self.visual_encoder.output_shape), hidden_size
-                ),
+                nn.Linear(np.prod(self.visual_encoder.output_shape), hidden_size),
                 nn.ReLU(True),
             )
 
@@ -171,7 +173,8 @@ class TransformerWrapper(nn.Module):
             n_attend = env_att_masks.sum()
             if step_idx.max() + 1 != n_attend:
                 raise ValueError(
-                    f"Attention mask is wrong {env_att_masks}, compare to steps {step_idx}"
+                    f"Attention mask is wrong {env_att_masks}, compare to steps"
+                    f" {step_idx}"
                 )
             step_diff = step_idx[1:] - step_idx[:-1]
             if not (len(step_diff) == 0 or (step_diff == 1).all()):
@@ -187,32 +190,22 @@ class TransformerWrapper(nn.Module):
         all_embeds = torch.cat([non_causal_embeds, causal_embeds], dim=1)
 
         non_causal_mask = self._get_non_causal_mask(non_causal_embeds)
-        non_causal_mask = non_causal_mask.expand(
-            non_causal_embeds.shape[0], -1
-        )
+        non_causal_mask = non_causal_mask.expand(non_causal_embeds.shape[0], -1)
         att_masks = att_masks.view(*att_masks.shape[:2])
         att_masks = torch.cat([non_causal_mask, att_masks], dim=-1)
         assert len(att_masks.shape) == 2
 
-        seq_out = self.model(
-            inputs_embeds=all_embeds, attention_mask=att_masks.int()
-        )
+        seq_out = self.model(inputs_embeds=all_embeds, attention_mask=att_masks.int())
         context_len = causal_embeds.shape[1]
         return seq_out.last_hidden_state[:, -context_len:].to(torch.float32)
 
     def postprocess_past_key_value(self, past_key_values):
         # past_key_values.shape -> [nL, 2(k and v), bs(nE), nH, nS, nE/nH]
-        past_key_values = torch.stack(
-            [torch.stack(x) for x in past_key_values]
-        )
-        return past_key_values.permute(2, 0, 1, 3, 4, 5)[..., -1, :].flatten(
-            2, 4
-        )
+        past_key_values = torch.stack([torch.stack(x) for x in past_key_values])
+        return past_key_values.permute(2, 0, 1, 3, 4, 5)[..., -1, :].flatten(2, 4)
 
     def stack_past_key_values(self, past_key_values):
-        past_key_values = torch.stack(
-            [torch.stack(x) for x in past_key_values]
-        )
+        past_key_values = torch.stack([torch.stack(x) for x in past_key_values])
         return past_key_values
 
     def preprocess_past_key_value(self, past_key_values):
@@ -224,9 +217,7 @@ class TransformerWrapper(nn.Module):
             2, 3, 1, 4, 0, 5
         )
 
-    def forward(
-        self, observations, rnn_hidden_states, masks, rnn_build_seq_info
-    ):
+    def forward(self, observations, rnn_hidden_states, masks, rnn_build_seq_info):
         if len(rnn_hidden_states.shape) == 4:
             IS_UPDATE = False
         else:
@@ -265,9 +256,7 @@ class TransformerWrapper(nn.Module):
         visual_feats = self.visual_fc(visual_feats)
 
         if reshape:
-            visual_feats = visual_feats.reshape(
-                n_env, n_steps, *visual_feats.shape[1:]
-            )
+            visual_feats = visual_feats.reshape(n_env, n_steps, *visual_feats.shape[1:])
         elif not IS_UPDATE:
             visual_feats = visual_feats[:, None]
         elif IS_UPDATE:
@@ -286,8 +275,7 @@ class TransformerWrapper(nn.Module):
                 torch.arange(masks.shape[1]), (masks.shape[0], 1)
             ).to(masks.device)
             position_ids = (
-                position_ids
-                - torch.cummax(position_ids * (1 - masks), dim=-1)[0]
+                position_ids - torch.cummax(position_ids * (1 - masks), dim=-1)[0]
             )
             position_ids = position_ids[:, -feats.shape[1] :]
         else:
@@ -315,11 +303,7 @@ class TransformerWrapper(nn.Module):
 
     def get_trainable_params(self):
         return chain(
-            [
-                p
-                for name, p in self.model.named_parameters()
-                if "wte" not in name
-            ],
+            [p for name, p in self.model.named_parameters() if "wte" not in name],
             self.visual_encoder.parameters(),
             self.visual_fc.parameters(),
         )
@@ -387,7 +371,7 @@ class MinimalTransformerWrapper(nn.Module):
                 banded_attention=self.banded_attention,
                 orphan_steps_attention=self.orphan_steps_attention,
                 depth_dropout_p=self.depth_dropout_p,
-                max_position_embeddings=self.max_position_embeddings
+                max_position_embeddings=self.max_position_embeddings,
             )
 
             self.model = LlamaRLModel(self.hf_config)
@@ -395,22 +379,15 @@ class MinimalTransformerWrapper(nn.Module):
         else:
             raise ValueError(f"Unrecognized {self.model_name}")
 
-        logger.info(f"Done loading llama")
+        logger.info("Done loading llama")
 
     def postprocess_past_key_value(self, past_key_values, full_rnn_state=False):
         # past_key_values.shape -> [nL, 2(k and v), bs(nE), nH, nS, nE/nH]
-        past_key_values = torch.stack(
-            [torch.stack(x) for x in past_key_values]
-        )
+        past_key_values = torch.stack([torch.stack(x) for x in past_key_values])
         if not full_rnn_state:
-            return past_key_values.permute(2, 0, 1, 3, 4, 5)[..., -1, :].flatten(
-                2, 4
-            )
+            return past_key_values.permute(2, 0, 1, 3, 4, 5)[..., -1, :].flatten(2, 4)
         else:
-            return past_key_values.permute(4, 2, 0, 1, 3, 5).flatten(
-                3, 5
-            )
-
+            return past_key_values.permute(4, 2, 0, 1, 3, 5).flatten(3, 5)
 
     def stack_past_key_values(self, past_key_values, last_step=False):
         if last_step:
@@ -418,9 +395,7 @@ class MinimalTransformerWrapper(nn.Module):
                 [torch.stack([y[..., -1, :] for y in x]) for x in past_key_values]
             )
         else:
-            past_key_values = torch.stack(
-                [torch.stack(x) for x in past_key_values]
-            )
+            past_key_values = torch.stack([torch.stack(x) for x in past_key_values])
         return past_key_values
 
     def preprocess_past_key_value(self, past_key_values):
@@ -432,9 +407,19 @@ class MinimalTransformerWrapper(nn.Module):
             2, 3, 0, 4, 1, 5
         )
 
-    def forward(self, feats, rnn_hidden_states, masks, rnn_build_seq_info, full_rnn_state=False, **kwargs):
+    def forward(
+        self,
+        feats,
+        rnn_hidden_states,
+        masks,
+        rnn_build_seq_info,
+        full_rnn_state=False,
+        **kwargs,
+    ):
         if rnn_build_seq_info is None:
-            past_key_values = rnn_hidden_states if np.prod(rnn_hidden_states.shape) > 0 else None
+            past_key_values = (
+                rnn_hidden_states if np.prod(rnn_hidden_states.shape) > 0 else None
+            )
             n_envs = rnn_hidden_states.shape[2]
             seq_len = 1
             masks = masks.squeeze(-1).float()
@@ -463,8 +448,18 @@ class MinimalTransformerWrapper(nn.Module):
             dim=1,
         )
 
-        if rnn_build_seq_info is not None and not rnn_build_seq_info["is_first"] and not self.add_context_loss:
-            feats = torch.concat([feats[:, :rnn_build_seq_info["old_context_length"]].detach(), feats[:, rnn_build_seq_info["old_context_length"]:]], dim=1)
+        if (
+            rnn_build_seq_info is not None
+            and not rnn_build_seq_info["is_first"]
+            and not self.add_context_loss
+        ):
+            feats = torch.concat(
+                [
+                    feats[:, : rnn_build_seq_info["old_context_length"]].detach(),
+                    feats[:, rnn_build_seq_info["old_context_length"] :],
+                ],
+                dim=1,
+            )
 
         if stop_grad_steps:
             feats_ = feats[:, :stop_grad_steps].detach()
@@ -491,7 +486,7 @@ class MinimalTransformerWrapper(nn.Module):
             inputs_embeds=feats,
             past_key_values=past_key_values,
             attention_mask=masks,
-            **kwargs
+            **kwargs,
         )
 
         feats = output.last_hidden_state
@@ -508,9 +503,17 @@ class MinimalTransformerWrapper(nn.Module):
             feats = torch.concat([feats_, feats], dim=1)
         feats = feats.flatten(0, 1)
         if kwargs:
-            return feats, self.stack_past_key_values(output.past_key_values, last_step=not full_rnn_state), output
+            return (
+                feats,
+                self.stack_past_key_values(
+                    output.past_key_values, last_step=not full_rnn_state
+                ),
+                output,
+            )
         else:
-            return feats, self.stack_past_key_values(output.past_key_values, last_step=not full_rnn_state)
+            return feats, self.stack_past_key_values(
+                output.past_key_values, last_step=not full_rnn_state
+            )
 
     def get_trainable_params(self):
         return chain(

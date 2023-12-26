@@ -5,14 +5,10 @@ from typing import Any, Dict, Iterator, Optional, Tuple
 import gym.spaces as spaces
 import numpy as np
 import torch
-from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.rollout_storage import RolloutStorage
 from habitat_baselines.common.tensor_dict import DictTree, TensorDict
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet
-from habitat_baselines.rl.models.rnn_state_encoder import (
-    build_pack_info_from_dones, build_rnn_build_seq_info)
-from habitat_baselines.utils.common import (get_num_actions,
-                                            is_continuous_action_space)
+from habitat_baselines.utils.common import get_num_actions, is_continuous_action_space
 from torch.nn.utils.rnn import pad_sequence
 
 ATT_MASK_K = "att_mask"
@@ -81,8 +77,8 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         action_shape: Optional[Tuple[int]] = None,
         discrete_actions: bool = False,
         device: bool = "cpu",
-        dtype = torch.bfloat16,
-        freeze_visual_feats = False
+        dtype=torch.bfloat16,
+        freeze_visual_feats=False,
     ):
         self._dtype = dtype
         self.context_length = actor_critic.context_len
@@ -99,10 +95,10 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         self.buffers["observations"] = TensorDict()
 
         self.vis_keys = {
-                k
-                for k in observation_space.spaces
-                if len(observation_space.spaces[k].shape) == 3
-            }
+            k
+            for k in observation_space.spaces
+            if len(observation_space.spaces[k].shape) == 3
+        }
 
         if PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observation_space.spaces:
             to_remove_sensor = self.vis_keys
@@ -121,14 +117,8 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             shape = observation_space.spaces[sensor].shape
 
             self.buffers["observations"][sensor] = torch.zeros(
-                    (
-                        num_envs,
-                        numsteps + 1,
-                        *shape
-                    ),
-                    dtype=dtype,
-                    device=device
-                )
+                (num_envs, numsteps + 1, *shape), dtype=dtype, device=device
+            )
 
         self._recurrent_hidden_states_shape = (
             num_recurrent_layers,
@@ -136,15 +126,21 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             num_envs,
             actor_critic.num_heads,
             numsteps + 1,
-            actor_critic.net.recurrent_hidden_size//actor_critic.num_heads,
+            actor_critic.net.recurrent_hidden_size // actor_critic.num_heads,
         )
         self._recurrent_hidden_states = torch.zeros(
             self._recurrent_hidden_states_shape, device=device, dtype=self._dtype
         )
 
-        self.buffers["rewards"] = torch.zeros((num_envs, numsteps + 1, 1), device=device, dtype=self._dtype)
-        self.buffers["value_preds"] = torch.zeros((num_envs, numsteps + 1, 1), device=device, dtype=self._dtype)
-        self.buffers["returns"] = torch.zeros((num_envs, numsteps + 1, 1), device=device, dtype=self._dtype)
+        self.buffers["rewards"] = torch.zeros(
+            (num_envs, numsteps + 1, 1), device=device, dtype=self._dtype
+        )
+        self.buffers["value_preds"] = torch.zeros(
+            (num_envs, numsteps + 1, 1), device=device, dtype=self._dtype
+        )
+        self.buffers["returns"] = torch.zeros(
+            (num_envs, numsteps + 1, 1), device=device, dtype=self._dtype
+        )
 
         self.buffers["action_log_probs"] = torch.zeros(
             (num_envs, numsteps + 1, 1), device=device, dtype=self._dtype
@@ -221,7 +217,6 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             masks=next_masks,
         )
 
-
         current_step = dict(
             actions=actions,
             action_log_probs=action_log_probs,
@@ -245,7 +240,9 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             )
 
         if next_recurrent_hidden_states is not None:
-            self._recurrent_hidden_states[:, :, env_slice, :, self.current_rollout_step_idxs[buffer_index] + 1] = next_recurrent_hidden_states
+            self._recurrent_hidden_states[
+                :, :, env_slice, :, self.current_rollout_step_idxs[buffer_index] + 1
+            ] = next_recurrent_hidden_states
 
         if len(current_step) > 0:
             self.buffers.set(
@@ -283,9 +280,7 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
     def compute_returns(self, next_value, use_gae, gamma, tau):
         if use_gae:
             assert isinstance(self.buffers["value_preds"], torch.Tensor)
-            self.buffers["value_preds"][
-                :, self.current_rollout_step_idx
-            ] = next_value
+            self.buffers["value_preds"][:, self.current_rollout_step_idx] = next_value
             gae = 0.0
             for step in reversed(range(self.current_rollout_step_idx)):
                 delta = (
@@ -295,18 +290,13 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
                     * self.buffers["masks"][:, step + 1]
                     - self.buffers["value_preds"][:, step]
                 )
-                gae = (
-                    delta
-                    + gamma * tau * gae * self.buffers["masks"][:, step + 1]
-                )
+                gae = delta + gamma * tau * gae * self.buffers["masks"][:, step + 1]
                 self.buffers["returns"][:, step] = (  # type: ignore
                     gae + self.buffers["value_preds"][:, step]  # type: ignore
                 )
 
         else:
-            self.buffers["returns"][
-                :, self.current_rollout_step_idx
-            ] = next_value
+            self.buffers["returns"][:, self.current_rollout_step_idx] = next_value
             for step in reversed(range(self.current_rollout_step_idx)):
                 self.buffers["returns"][:, step] = (
                     gamma
@@ -335,14 +325,14 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         if self.is_banded:
             start_idx = max(
                 0,
-                self.current_rollout_step_idxs[buffer_index]
-                - self.context_length,
+                self.current_rollout_step_idxs[buffer_index] - self.context_length,
             )
         else:
             start_idx = 0
 
         batch["recurrent_hidden_states"] = self._recurrent_hidden_states[
-            :, :,
+            :,
+            :,
             env_slice,
             :,
             start_idx + 1 : self.current_rollout_step_idxs[buffer_index] + 1,
@@ -358,14 +348,15 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         batch = self.buffers[:, self.current_rollout_step_idx]
 
         if self.is_banded:
-            start_idx = max(
-                0, self.current_rollout_step_idx - self.context_length
-            )
+            start_idx = max(0, self.current_rollout_step_idx - self.context_length)
         else:
             start_idx = 0
 
         batch["recurrent_hidden_states"] = self._recurrent_hidden_states[
-            :, :, :, :,
+            :,
+            :,
+            :,
+            :,
             start_idx + 1 : self.current_rollout_step_idx + 1,
         ]
         batch["masks"] = self.buffers[
@@ -382,28 +373,30 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         if env_id is None:
             batch = self.buffers[:, :n_steps]
         else:
-            batch = self.buffers[env_id:env_id+1, :n_steps]
+            batch = self.buffers[env_id : env_id + 1, :n_steps]
         dims = batch["masks"].shape[:2]
         batch.map_in_place(lambda v: v.flatten(0, 1))
         batch["rnn_build_seq_info"] = TensorDict(
             {
-                "dims": torch.from_numpy(
-                    np.asarray(dims)
-                ),
+                "dims": torch.from_numpy(np.asarray(dims)),
                 "is_first": torch.tensor(True),
-                "old_context_length": torch.tensor(n_steps)
+                "old_context_length": torch.tensor(n_steps),
             }
         )
         return batch
-    
-    def update_context_data(self, value_preds, recurrent_hidden_states, env_id=None, n_steps=None):
+
+    def update_context_data(
+        self, value_preds, recurrent_hidden_states, env_id=None, n_steps=None
+    ):
         n_steps = self.old_context_length if n_steps is None else n_steps
-        env_id = slice(env_id, env_id+1) if env_id is not None else slice()
+        env_id = slice(env_id, env_id + 1) if env_id is not None else slice()
 
         if value_preds is not None:
             self.buffers["value_preds"][env_id, :n_steps] = value_preds
         if recurrent_hidden_states is not None:
-            self._recurrent_hidden_states[:, :, env_id, :, 1:n_steps+1] = recurrent_hidden_states
+            self._recurrent_hidden_states[:, :, env_id, :, 1 : n_steps + 1] = (
+                recurrent_hidden_states
+            )
 
     def data_generator(
         self,
@@ -415,9 +408,7 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         assert num_environments >= num_mini_batch, (
             "Trainer requires the number of environments ({}) "
             "to be greater than or equal to the number of "
-            "trainer mini batches ({}).".format(
-                num_environments, num_mini_batch
-            )
+            "trainer mini batches ({}).".format(num_environments, num_mini_batch)
         )
         if num_environments % num_mini_batch != 0:
             warnings.warn(
@@ -429,14 +420,16 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             )
 
         if advantages is not None:
-           self.buffers["advantages"] = advantages
+            self.buffers["advantages"] = advantages
 
         # batches = self.buffers[np.random.permutation(num_environments), :self.current_rollout_step_idx]
         b_indexes = np.random.permutation(num_environments)
-        batch_size = num_environments//num_mini_batch
+        batch_size = num_environments // num_mini_batch
 
         for inds in range(0, num_environments, batch_size):
-            batch = self.buffers[b_indexes[inds:inds+batch_size], :self.current_rollout_step_idx]
+            batch = self.buffers[
+                b_indexes[inds : inds + batch_size], : self.current_rollout_step_idx
+            ]
             batch["recurrent_hidden_states"] = torch.tensor([[]])
 
             if not self.add_context_loss and not self.is_first_update:
@@ -457,12 +450,15 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             batch["rnn_build_seq_info"] = TensorDict(
                 {
                     "dims": torch.from_numpy(
-                        np.asarray([min(inds+batch_size, num_environments) - inds, self.current_rollout_step_idx])
+                        np.asarray(
+                            [
+                                min(inds + batch_size, num_environments) - inds,
+                                self.current_rollout_step_idx,
+                            ]
+                        )
                     ),
                     "is_first": torch.tensor(self.is_first_update),
-                    "old_context_length": torch.tensor(
-                        self.old_context_length
-                    ),
+                    "old_context_length": torch.tensor(self.old_context_length),
                 }
             )
 
@@ -480,17 +476,12 @@ class TransformerRolloutStorage(RolloutStorage):
         **kwargs,
     ):
         self._frozen_visual = (
-            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY
-            in observation_space.spaces
+            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observation_space.spaces
         )
         if self._frozen_visual:
             # Remove the head RGB camera because we have the visual information in the visual features
             observation_space = spaces.Dict(
-                {
-                    k: v
-                    for k, v in observation_space.spaces.items()
-                    if k != "head_rgb"
-                }
+                {k: v for k, v in observation_space.spaces.items() if k != "head_rgb"}
             )
 
         super().__init__(
@@ -574,9 +565,9 @@ class TransformerRolloutStorage(RolloutStorage):
                 int((buffer_index + 1) * self._num_envs / self._nbuffers),
             )
 
-            self.hidden_window[
-                :, :, env_slice, :, write_step
-            ] = next_recurrent_hidden_states
+            self.hidden_window[:, :, env_slice, :, write_step] = (
+                next_recurrent_hidden_states
+            )
 
     def insert_first_observations(self, batch):
         if self._frozen_visual:
@@ -630,9 +621,7 @@ class TransformerRolloutStorage(RolloutStorage):
             batch = self.buffers[curr_slice]
             if advantages is not None:
                 batch["advantages"] = advantages[curr_slice]
-            batch["recurrent_hidden_states"] = batch[
-                "recurrent_hidden_states"
-            ][0:1]
+            batch["recurrent_hidden_states"] = batch["recurrent_hidden_states"][0:1]
 
             # batch.map_in_place(lambda v: v.flatten(0, 1))
 
@@ -664,9 +653,7 @@ class TransformerRolloutStorage(RolloutStorage):
         buff_data["observations"][HIDDEN_WINDOW_K] = self.hidden_window[
             :, :, env_slice, :, :cur_step
         ]
-        buff_data["observations"][ATT_MASK_K] = self.att_masks[
-            env_slice, :cur_step
-        ]
+        buff_data["observations"][ATT_MASK_K] = self.att_masks[env_slice, :cur_step]
         return buff_data
 
     def get_last_step(self):
@@ -687,7 +674,7 @@ def flatten_trajs(
     max_total_samples: Optional[int] = None,
 ) -> TensorDict:
     max_data_window_size = current_rollout_step_idx
-    n_envs = advantages.shape[0]
+    advantages.shape[0]
     device = advantages.device
     curr_slice = (
         slice(0, max_data_window_size),
@@ -714,9 +701,9 @@ def flatten_trajs(
         batch_ep_starts = ep_starts_cpu[ep_starts_cpu[:, 1] == batch_idx][:, 0]
         batch_to_next_ep_starts[batch_idx] = {}
         for i in range(len(batch_ep_starts) - 1):
-            batch_to_next_ep_starts[batch_idx][
-                batch_ep_starts[i]
-            ] = batch_ep_starts[i + 1]
+            batch_to_next_ep_starts[batch_idx][batch_ep_starts[i]] = batch_ep_starts[
+                i + 1
+            ]
 
     num_samples = 0
     fetch_before_counts = []
@@ -738,9 +725,13 @@ def flatten_trajs(
             dtype=torch.bool,
             device=device,
         )
-        assert (
-            att_mask.shape[0] == add_batch["masks"].shape[0]
-        ), f"Got att mask of shape {att_mask.shape} and masks of shape {add_batch['masks'].shape}, trying to read from range {step_idx}-{step_idx_end}, when step size is {max_data_window_size} cur step idx {current_rollout_step_idx}, orig mask shape {batch['masks'].shape}"
+        assert att_mask.shape[0] == add_batch["masks"].shape[0], (
+            f"Got att mask of shape {att_mask.shape} and masks of shape"
+            f" {add_batch['masks'].shape}, trying to read from range"
+            f" {step_idx}-{step_idx_end}, when step size is {max_data_window_size} cur"
+            f" step idx {current_rollout_step_idx}, orig mask shape"
+            f" {batch['masks'].shape}"
+        )
 
         # Mask out steps that intersect with the next episode
         if ep_intersect > 0:
@@ -775,9 +766,10 @@ def flatten_trajs(
             # Stop fetching trajectories.
             break
 
-    assert (
-        len(eps) > 0
-    ), "Collected no episodes from rollout, ensure episode horizon is shorter than rollout length."
+    assert len(eps) > 0, (
+        "Collected no episodes from rollout, ensure episode horizon is shorter than"
+        " rollout length."
+    )
     ret_batch = transpose_stack_pad_dicts(eps)
 
     ret_batch["observations"][FETCH_BEFORE_COUNTS_K] = torch.tensor(
@@ -786,7 +778,7 @@ def flatten_trajs(
 
     # Ensure every sample is accounted for in this data batch.
     num_samples = ret_batch["observations"][ATT_MASK_K].sum()
-    expected_num_samples = len(inds) * max_data_window_size
+    len(inds) * max_data_window_size
     # This assert no longer works, because we might truncate the episode collection based on the `max_total_samples`.
     # assert (
     #     expected_num_samples == num_samples

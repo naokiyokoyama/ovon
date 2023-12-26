@@ -5,9 +5,9 @@ import gym.spaces as spaces
 import torch.nn as nn
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ppo.policy import CriticHead, Policy
-from habitat_baselines.utils.common import (CategoricalNet,
-                                            CustomFixedCategorical,
-                                            GaussianNet, get_num_actions)
+from habitat_baselines.utils.common import (
+    CategoricalNet,
+)
 
 from ovon.models.transformer_wrappers import TransformerWrapper
 
@@ -23,9 +23,10 @@ class FlatPolicy(nn.Module, Policy):
         )
 
         hidden_size = policy_cfg.ac_hidden_size
-        assert isinstance(
-            action_space, spaces.Discrete
-        ), "Only discrete action spaces are supported right now (but this is easy to fix)"
+        assert isinstance(action_space, spaces.Discrete), (
+            "Only discrete action spaces are supported right now (but this is easy to"
+            " fix)"
+        )
         self.distrib_head = CategoricalNet(hidden_size, action_space.n)
         self.critic = CriticHead(hidden_size)
 
@@ -109,7 +110,6 @@ class FlatPolicy(nn.Module, Policy):
         masks,
         deterministic=False,
     ):
-
         distrib, features, rnn_hidden_states = self.get_distrib(
             observations, rnn_hidden_states, masks
         )
@@ -121,12 +121,7 @@ class FlatPolicy(nn.Module, Policy):
             action = distrib.sample()
         action_log_probs = distrib.log_probs(action)
 
-        return (
-            values,
-            action,
-            action_log_probs,
-            rnn_hidden_states
-        )
+        return (values, action, action_log_probs, rnn_hidden_states)
 
     @classmethod
     def from_config(cls, config, observation_space, action_space, **kwargs):

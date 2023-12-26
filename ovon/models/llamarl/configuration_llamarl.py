@@ -122,7 +122,7 @@ class LlamaRLConfig(PretrainedConfig):
         tie_word_embeddings=False,
         position_embed_type="linear",
         rope_scaling=None,
-        depth_dropout_p: float=0,
+        depth_dropout_p: float = 0,
         inter_episodes_attention: bool = False,
         reset_position_index: bool = True,
         add_sequence_idx_embed: bool = False,
@@ -175,13 +175,10 @@ class LlamaRLConfig(PretrainedConfig):
         if self.rope_scaling is None:
             return
 
-        if (
-            not isinstance(self.rope_scaling, dict)
-            or len(self.rope_scaling) != 2
-        ):
+        if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
             raise ValueError(
-                "`rope_scaling` must be a dictionary with with two fields, `name` and `factor`, "
-                f"got {self.rope_scaling}"
+                "`rope_scaling` must be a dictionary with with two fields, `name` and"
+                f" `factor`, got {self.rope_scaling}"
             )
         rope_scaling_type = self.rope_scaling.get("type", None)
         rope_scaling_factor = self.rope_scaling.get("factor", None)
@@ -190,7 +187,8 @@ class LlamaRLConfig(PretrainedConfig):
             "dynamic",
         ]:
             raise ValueError(
-                f"`rope_scaling`'s name field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
+                "`rope_scaling`'s name field must be one of ['linear', 'dynamic'], got"
+                f" {rope_scaling_type}"
             )
         if (
             rope_scaling_factor is None
@@ -198,5 +196,6 @@ class LlamaRLConfig(PretrainedConfig):
             or rope_scaling_factor <= 1.0
         ):
             raise ValueError(
-                f"`rope_scaling`'s factor field must be an float > 1, got {rope_scaling_factor}"
+                "`rope_scaling`'s factor field must be an float > 1, got"
+                f" {rope_scaling_factor}"
             )

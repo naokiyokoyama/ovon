@@ -111,7 +111,7 @@ def main():
         assert osp.isfile(ckpt_path)
         ckpt_dict = torch.load(ckpt_path, map_location="cpu")
         step_id = ckpt_dict["extra_state"]["step"]
-        if not 1e8 < step_id < 3e8:
+        if not 1e8 < step_id < 2.6e8:
             # Create an overflow folder if it doesn't exist
             overflow_dir = osp.join(osp.dirname(ckpt_path), "overflow")
             try:
@@ -253,6 +253,20 @@ def edit_config(config, args):
                     "config to speed up training."
                 )
                 config.habitat.task.measurements.pop(measure_name)
+    else:
+        # For eval, remove the objnav_explorer teacher
+        if hasattr(config.habitat.task.lab_sensors, "objnav_explorer"):
+            print("[run.py]: Removing objnav_explorer sensor from config for eval.")
+            config.habitat.task.lab_sensors.pop("objnav_explorer")
+
+        # Remove relabeler too
+        if hasattr(
+            config.habitat_baselines.rl.policy.obs_transforms, "relabel_teacher_actions"
+        ):
+            print("[run.py]: Removing relabel_teacher_actions from config for eval.")
+            config.habitat_baselines.rl.policy.obs_transforms.pop(
+                "relabel_teacher_actions"
+            )
 
 
 if __name__ == "__main__":

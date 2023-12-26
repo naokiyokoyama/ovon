@@ -12,15 +12,19 @@ import numpy as np
 import torch
 from gym import spaces
 from habitat.tasks.nav.instance_image_nav_task import InstanceImageGoalSensor
-from habitat.tasks.nav.nav import (EpisodicCompassSensor, EpisodicGPSSensor,
-                                   HeadingSensor, ImageGoalSensor,
-                                   IntegratedPointGoalGPSAndCompassSensor,
-                                   PointGoalSensor, ProximitySensor)
+from habitat.tasks.nav.nav import (
+    EpisodicCompassSensor,
+    EpisodicGPSSensor,
+    HeadingSensor,
+    ImageGoalSensor,
+    IntegratedPointGoalGPSAndCompassSensor,
+    PointGoalSensor,
+    ProximitySensor,
+)
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ddppo.policy import resnet
-from habitat_baselines.rl.ddppo.policy.running_mean_and_var import \
-    RunningMeanAndVar
+from habitat_baselines.rl.ddppo.policy.running_mean_and_var import RunningMeanAndVar
 from habitat_baselines.rl.ppo import Net, NetPolicy
 from habitat_baselines.utils.common import get_num_actions
 from torch import nn as nn
@@ -210,7 +214,7 @@ class PointNavResNetTransformerPolicy(NetPolicy):
             aux_loss_config=config.habitat_baselines.rl.auxiliary_losses,
             fuse_keys=None,
         )
-    
+
     @torch.autocast("cuda")
     def evaluate_actions(
         self,
@@ -308,7 +312,7 @@ class ResNetEncoder(nn.Module):
                 )
                 if layer.bias is not None:
                     nn.init.constant_(layer.bias, val=0)
-    
+
     @torch.autocast("cuda")
     def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:  # type: ignore
         if self.is_blind:

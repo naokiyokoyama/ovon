@@ -1,12 +1,20 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from habitat.config.default_structured_configs import (
-    CollisionsMeasurementConfig, HabitatConfig, LabSensorConfig,
-    MeasurementConfig, SimulatorConfig)
+    CollisionsMeasurementConfig,
+    HabitatConfig,
+    LabSensorConfig,
+    MeasurementConfig,
+    SimulatorConfig,
+)
 from habitat_baselines.config.default_structured_configs import (
-    DDPPOConfig, HabitatBaselinesBaseConfig, HabitatBaselinesRLConfig,
-    PolicyConfig, PPOConfig, RLConfig)
+    HabitatBaselinesBaseConfig,
+    HabitatBaselinesRLConfig,
+    PolicyConfig,
+    PPOConfig,
+    RLConfig,
+)
 from hydra.core.config_search_path import ConfigSearchPath
 from hydra.core.config_store import ConfigStore
 from hydra.plugins.search_path_plugin import SearchPathPlugin
@@ -385,7 +393,6 @@ cs.store(
 
 class HabitatConfigPlugin(SearchPathPlugin):
     def manipulate_search_path(self, search_path: ConfigSearchPath) -> None:
-        print("manipulating search path")
         search_path.append(
             provider="habitat",
             path="pkg://config/tasks/",

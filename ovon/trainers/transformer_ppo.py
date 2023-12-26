@@ -7,20 +7,16 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from habitat import logger
 from habitat.utils import profiling_wrapper
-from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.rollout_storage import RolloutStorage
 from habitat_baselines.rl.ddppo.algo.ddppo import DecentralizedDistributedMixin
 from habitat_baselines.rl.ppo.policy import NetPolicy
 from habitat_baselines.rl.ppo.ppo import PPO
 from habitat_baselines.rl.ver.ver_rollout_storage import VERRolloutStorage
-from habitat_baselines.utils.common import (LagrangeInequalityCoefficient,
-                                            inference_mode)
-from torch import Tensor
+from habitat_baselines.utils.common import LagrangeInequalityCoefficient, inference_mode
 
 
 class MinimalTransformerPPO(PPO):
@@ -50,7 +46,7 @@ class MinimalTransformerPPO(PPO):
         grad_accum_mini_batches: int = 1,
         optimizer_name: str = "adam",
         adamw_weight_decay: float = 0.01,
-        ignore_old_obs_grad: bool = False
+        ignore_old_obs_grad: bool = False,
     ) -> None:
         self.skipgrad = skipgrad
         self.skipgrad_factor1 = skipgrad_factor1
@@ -107,9 +103,7 @@ class MinimalTransformerPPO(PPO):
         return obj
 
     def update(
-        self,
-        rollouts: RolloutStorage,
-        loss_from_step: int = 0
+        self, rollouts: RolloutStorage, loss_from_step: int = 0
     ) -> Dict[str, float]:
         advantages = self.get_advantages(rollouts)
 
@@ -117,9 +111,7 @@ class MinimalTransformerPPO(PPO):
 
         for epoch in range(self.ppo_epoch):
             profiling_wrapper.range_push("PPO.update epoch")
-            data_generator = rollouts.data_generator(
-                advantages, self.num_mini_batch
-            )
+            data_generator = rollouts.data_generator(advantages, self.num_mini_batch)
 
             self._update_from_data_generator(
                 data_generator, epoch, rollouts, learner_metrics, loss_from_step
@@ -178,6 +170,7 @@ class MinimalTransformerPPO(PPO):
         """
         Performs a gradient update from the minibatch.
         """
+
         def record_min_mean_max(t: torch.Tensor, prefix: str):
             for name, op in (
                 ("min", torch.min),
@@ -244,9 +237,23 @@ class MinimalTransformerPPO(PPO):
                 if "is_coeffs" in batch:
                     assert isinstance(batch["is_coeffs"], torch.Tensor)
                     ver_is_coeffs = batch["is_coeffs"].clamp(max=1.0)
-                    mean_fn = lambda t: torch.mean(ver_is_coeffs * (t.unflatten(0, (n_envs, seq_len)))[:, loss_from_step:].flatten(0, 1))
+
+                    def mean_fn(t):
+                        return torch.mean(
+                            ver_is_coeffs
+                            * t.unflatten(0, (n_envs, seq_len))[
+                                :, loss_from_step:
+                            ].flatten(0, 1)
+                        )
+
                 else:
-                    mean_fn = lambda t: torch.mean((t.unflatten(0, (n_envs, seq_len))/inv_weights)[:, loss_from_step:].flatten(0, 1))
+
+                    def mean_fn(t):
+                        return torch.mean(
+                            (t.unflatten(0, (n_envs, seq_len)) / inv_weights)[
+                                :, loss_from_step:
+                            ].flatten(0, 1)
+                        )
 
                 action_loss, value_loss, dist_entropy = map(
                     mean_fn,
@@ -261,9 +268,7 @@ class MinimalTransformerPPO(PPO):
                 if isinstance(self.entropy_coef, float):
                     all_losses.append(-self.entropy_coef * dist_entropy)
                 else:
-                    all_losses.append(
-                        self.entropy_coef.lagrangian_loss(dist_entropy)
-                    )
+                    all_losses.append(self.entropy_coef.lagrangian_loss(dist_entropy))
 
                 all_losses.extend(v["loss"] for v in aux_loss_res.values())
 
@@ -284,20 +289,15 @@ class MinimalTransformerPPO(PPO):
                         print("Creating grad_norm EMA stats.")
                     else:
                         _fac = self.skipgrad_factor1
-                        SHOULD_UPDATE = (
-                            grad_norm < 20000000 * self._grad_norm_ema
-                        )
+                        SHOULD_UPDATE = grad_norm < 20000000 * self._grad_norm_ema
                         if SHOULD_UPDATE:
                             self._grad_norm_ema = (
-                                self._grad_norm_ema * (1 - _fac)
-                                + _fac * grad_norm
+                                self._grad_norm_ema * (1 - _fac) + _fac * grad_norm
                             )
                         else:
                             self._grad_norm_ema = (
                                 self._grad_norm_ema * (1 - _fac)
-                                + _fac
-                                * self.skipgrad_factor2
-                                * self._grad_norm_ema
+                                + _fac * self.skipgrad_factor2 * self._grad_norm_ema
                             )
 
                     if self._updates_count_ema < 100 or SHOULD_UPDATE:
@@ -305,7 +305,8 @@ class MinimalTransformerPPO(PPO):
                     else:
                         self.optimizer.zero_grad()
                         print(
-                            f"Skipping step {self._updates_count_ema} because of high norm."
+                            f"Skipping step {self._updates_count_ema} because of high"
+                            " norm."
                         )
                         # print(f"_grad_norm_ema={self._grad_norm_ema}, grad_norm={grad_norm}")
                 self.optimizer.step()
@@ -333,9 +334,7 @@ class MinimalTransformerPPO(PPO):
 
             learner_metrics["grad_norm"].append(grad_norm)
             if isinstance(self.entropy_coef, LagrangeInequalityCoefficient):
-                learner_metrics["entropy_coef"].append(
-                    self.entropy_coef().detach()
-                )
+                learner_metrics["entropy_coef"].append(self.entropy_coef().detach())
 
             for name, res in aux_loss_res.items():
                 for k, v in res.items():
@@ -350,10 +349,7 @@ class MinimalTransformerPPO(PPO):
             if isinstance(rollouts, VERRolloutStorage):
                 assert isinstance(batch["policy_version"], torch.Tensor)
                 record_min_mean_max(
-                    (
-                        rollouts.current_policy_version
-                        - batch["policy_version"]
-                    ).float(),
+                    (rollouts.current_policy_version - batch["policy_version"]).float(),
                     "policy_version_difference",
                 )
 
@@ -414,14 +410,15 @@ class MinimalTransformerPPO(PPO):
                 value_pred_clipped,
             )
 
-        value_loss = 0.5 * F.mse_loss(
-            values, batch["returns"], reduction="none"
-        )
+        value_loss = 0.5 * F.mse_loss(values, batch["returns"], reduction="none")
 
         if "is_coeffs" in batch:
             assert isinstance(batch["is_coeffs"], torch.Tensor)
             ver_is_coeffs = batch["is_coeffs"].clamp(max=1.0)
-            mean_fn = lambda t: torch.mean(ver_is_coeffs * t)
+
+            def mean_fn(t):
+                return torch.mean(ver_is_coeffs * t)
+
         else:
             mean_fn = torch.mean
 
@@ -472,9 +469,7 @@ class MinimalTransformerPPO(PPO):
                 self._updates_count_ema += 1
             else:
                 self.optimizer.zero_grad()
-                print(
-                    f"Skipping step {self._updates_count_ema} because of high norm."
-                )
+                print(f"Skipping step {self._updates_count_ema} because of high norm.")
                 # print(f"_grad_norm_ema={self._grad_norm_ema}, grad_norm={grad_norm}")
         self.optimizer.step()
         self.after_step()
@@ -500,9 +495,7 @@ class MinimalTransformerPPO(PPO):
 
             learner_metrics["grad_norm"].append(grad_norm)
             if isinstance(self.entropy_coef, LagrangeInequalityCoefficient):
-                learner_metrics["entropy_coef"].append(
-                    self.entropy_coef().detach()
-                )
+                learner_metrics["entropy_coef"].append(self.entropy_coef().detach())
 
             for name, res in aux_loss_res.items():
                 for k, v in res.items():
@@ -517,10 +510,7 @@ class MinimalTransformerPPO(PPO):
             if isinstance(rollouts, VERRolloutStorage):
                 assert isinstance(batch["policy_version"], torch.Tensor)
                 record_min_mean_max(
-                    (
-                        rollouts.current_policy_version
-                        - batch["policy_version"]
-                    ).float(),
+                    (rollouts.current_policy_version - batch["policy_version"]).float(),
                     "policy_version_difference",
                 )
 
@@ -544,9 +534,7 @@ class TransformerPPO(PPO):
 
     def _create_optimizer(self, lr, eps):
         params = list(filter(lambda p: p.requires_grad, self.parameters()))
-        print(
-            f"Number of params to train: {sum(param.numel() for param in params)}"
-        )
+        print(f"Number of params to train: {sum(param.numel() for param in params)}")
         opt = optim.AdamW(params, lr=lr, eps=eps)
         # self._lr_scheduler = get_constant_schedule_with_warmup(
         #     opt, num_warmup_steps=1000
@@ -597,7 +585,6 @@ class TransformerPPO(PPO):
             )
         )
         action_loss = -torch.min(surr1, surr2)
-        device = action_loss.device
         batch_size, context_len, _ = action_loss.shape
 
         values = values[..., None]
@@ -615,9 +602,7 @@ class TransformerPPO(PPO):
                 value_pred_clipped,
             )
 
-        value_loss = 0.5 * F.mse_loss(
-            values, batch["returns"], reduction="none"
-        )
+        value_loss = 0.5 * F.mse_loss(values, batch["returns"], reduction="none")
 
         # Compute the loss mask to not include the samples from old rollout windows.
         # before_loss_mask = (
@@ -684,9 +669,7 @@ class TransformerPPO(PPO):
 
             learner_metrics["grad_norm"].append(grad_norm)
             if isinstance(self.entropy_coef, LagrangeInequalityCoefficient):
-                learner_metrics["entropy_coef"].append(
-                    self.entropy_coef().detach()
-                )
+                learner_metrics["entropy_coef"].append(self.entropy_coef().detach())
 
             for name, res in aux_loss_res.items():
                 for k, v in res.items():
@@ -701,12 +684,12 @@ class TransformerPPO(PPO):
             if isinstance(rollouts, VERRolloutStorage):
                 assert isinstance(batch["policy_version"], torch.Tensor)
                 record_min_mean_max(
-                    (
-                        rollouts.current_policy_version
-                        - batch["policy_version"]
-                    ).to(self._dtype),
+                    (rollouts.current_policy_version - batch["policy_version"]).to(
+                        self._dtype
+                    ),
                     "policy_version_difference",
                 )
+
 
 class DistributedTransformerPPO(DecentralizedDistributedMixin, TransformerPPO):
     pass
