@@ -36,7 +36,8 @@ TENSORBOARD_DIR="tb/objectnav/ddppo/vc1_llama/seed_1/debug/"
 CHECKPOINT_DIR="data/new_checkpoints/objectnav/ddppo/vc1_llama/seed_1/debug/"
 DATA_PATH="data/datasets/objectnav/hm3d/v2"
 
-srun python ovon/run.py --config-name config/experiments/rl_transformer_hm3d \
+srun python ovon/run.py --exp-config config/experiments/rl_transformer_hm3d.yaml \
+    --run-type train \
     habitat_baselines.checkpoint_folder=$CHECKPOINT_DIR/ \
     habitat_baselines.tensorboard_dir=$TENSORBOARD_DIR \
     habitat_baselines.num_environments=2 \
