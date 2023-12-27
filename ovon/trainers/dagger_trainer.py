@@ -238,17 +238,15 @@ class VERDAggerTrainer(VERTrainer):
         rollouts_obs_space = copy.deepcopy(self.obs_space)
         if self._static_encoder and hasattr(self.actor_critic, "net"):
             self._encoder = self.actor_critic.net.visual_encoder
-            rollouts_obs_space = spaces.Dict(
-                {
-                    PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
-                        low=np.finfo(np.float32).min,
-                        high=np.finfo(np.float32).max,
-                        shape=self._encoder.output_shape,
-                        dtype=np.float32,
-                    ),
-                    **rollouts_obs_space.spaces,
-                }
-            )
+            rollouts_obs_space = spaces.Dict({
+                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
+                    low=np.finfo(np.float32).min,
+                    high=np.finfo(np.float32).max,
+                    shape=self._encoder.output_shape,
+                    dtype=np.float32,
+                ),
+                **rollouts_obs_space.spaces,
+            })
 
         n_inference_workers = self.ver_config.num_inference_workers
         main_is_iw = not self.ver_config.overlap_rollouts_and_learn
@@ -288,13 +286,11 @@ class VERDAggerTrainer(VERTrainer):
                     "step_ids",
                 )
                 .map_in_place(lambda t: t.share_memory_())
-            )[
-                (
-                    slice(0, len(self.environment_workers))
-                    if self.ver_config.variable_experience
-                    else 0
-                )
-            ]
+            )[(
+                slice(0, len(self.environment_workers))
+                if self.ver_config.variable_experience
+                else 0
+            )]
 
         self.actor_critic.share_memory()
 
@@ -423,21 +419,17 @@ class VERDAggerTrainer(VERTrainer):
             )
 
         if self.config.habitat_baselines.rl.ddppo.pretrained:
-            self.actor_critic.load_state_dict(
-                {  # type: ignore
-                    k[len("actor_critic.") :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                }
-            )
+            self.actor_critic.load_state_dict({  # type: ignore
+                k[len("actor_critic.") :]: v
+                for k, v in pretrained_state["state_dict"].items()
+            })
         elif self.config.habitat_baselines.rl.ddppo.pretrained_encoder:
             prefix = "actor_critic.net.visual_encoder."
-            self.actor_critic.net.visual_encoder.load_state_dict(
-                {
-                    k[len(prefix) :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                    if k.startswith(prefix)
-                }
-            )
+            self.actor_critic.net.visual_encoder.load_state_dict({
+                k[len(prefix) :]: v
+                for k, v in pretrained_state["state_dict"].items()
+                if k.startswith(prefix)
+            })
 
         if not self.config.habitat_baselines.rl.ddppo.train_encoder and hasattr(
             self.actor_critic, "net"

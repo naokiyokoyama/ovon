@@ -110,13 +110,11 @@ class PoseSampler:
                 z_diff = r * np.sin(theta)
 
                 pos, valid = self._vsnap_and_validate(
-                    np.array(
-                        [
-                            search_center[0] + x_diff,
-                            search_center[1],
-                            search_center[2] + z_diff,
-                        ]
-                    )
+                    np.array([
+                        search_center[0] + x_diff,
+                        search_center[1],
+                        search_center[2] + z_diff,
+                    ])
                 )
                 if not valid:
                     continue

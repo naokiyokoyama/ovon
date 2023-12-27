@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 @attr.s(auto_attribs=True, kw_only=True)
 class AgentStateSpec:
     r"""Agent data specifications that capture states of agent and sensor in replay state."""
+
     position: Optional[List[float]] = attr.ib(default=None)
     rotation: Optional[List[float]] = attr.ib(default=None)
     sensor_data: Optional[dict] = attr.ib(default=None)
@@ -35,6 +36,7 @@ class AgentStateSpec:
 @attr.s(auto_attribs=True, kw_only=True)
 class ReplayActionSpec:
     r"""Replay specifications that capture metadata associated with action."""
+
     action: str = attr.ib(default=None, validator=not_none_validator)
     agent_state: Optional[AgentStateSpec] = attr.ib(default=None)
 
@@ -44,6 +46,7 @@ class ObjectGoalNavEpisode(NavigationEpisode):
     r"""ObjectGoal Navigation Episode
     :param object_category: Category of the obect
     """
+
     object_category: Optional[str] = None
     reference_replay: Optional[List[ReplayActionSpec]] = None
     scene_state = None
@@ -62,6 +65,7 @@ class ObjectGoalNavEpisode(NavigationEpisode):
 @registry.register_dataset(name="ObjectNav-v2")
 class ObjectNavDatasetV2(PointNavDatasetV1):
     r"""Class inherited from PointNavDataset that loads Object Navigation dataset."""
+
     category_to_task_category_id: Dict[str, int]
     category_to_scene_annotation_category_id: Dict[str, int]
     episodes: List[ObjectGoalNavEpisode] = []  # type: ignore

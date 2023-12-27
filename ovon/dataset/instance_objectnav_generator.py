@@ -356,15 +356,13 @@ class InstanceObjectGoalGenerator:
             if radius > self.max_viewpoint_radius:
                 continue
 
-            viewpoints.append(
-                {
-                    "agent_state": {
-                        "position": state.position.tolist(),
-                        "rotation": quat_to_coeffs(state.rotation).tolist(),
-                    },
-                    "iou": 0.0,
-                }
-            )
+            viewpoints.append({
+                "agent_state": {
+                    "position": state.position.tolist(),
+                    "rotation": quat_to_coeffs(state.rotation).tolist(),
+                },
+                "iou": 0.0,
+            })
         return viewpoints
 
     def _make_goal(
@@ -393,9 +391,11 @@ class InstanceObjectGoalGenerator:
             return None
 
         result = {
-            "object_category": self.cat_map[obj.category.name()]
-            if prompt_goal is None
-            else prompt_goal,
+            "object_category": (
+                self.cat_map[obj.category.name()]
+                if prompt_goal is None
+                else prompt_goal
+            ),
             "object_id": obj.id,
             "position": obj.aabb.center.tolist(),
         }
@@ -466,13 +466,11 @@ class InstanceObjectGoalGenerator:
                 print("Start poses none for: {}".format(relationship_name))
                 continue
 
-            all_goals.append(
-                {
-                    "object_goals": goals,
-                    "start_positions": start_positions,
-                    "start_rotations": start_rotations,
-                }
-            )
+            all_goals.append({
+                "object_goals": goals,
+                "start_positions": start_positions,
+                "start_rotations": start_rotations,
+            })
         sim.close()
         return all_goals
 
@@ -583,9 +581,8 @@ class InstanceObjectGoalGenerator:
 
             if len(goal["start_positions"]) == 0:
                 print(
-                    "Object: {} is ignored because there are no valid start positions".format(
-                        object_goal["img_ref"]
-                    )
+                    "Object: {} is ignored because there are no valid start positions"
+                    .format(object_goal["img_ref"])
                 )
                 continue
             start_positions = goal["start_positions"]
@@ -618,7 +615,9 @@ def make_episodes_for_scene(args):
         scene, outpath = scene
 
     iig_maker = InstanceObjectGoalGenerator(
-        semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
+        semantic_spec_filepath=(
+            "data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
+        ),
         img_size=(512, 512),
         hfov=90,
         agent_height=1.41,
@@ -636,7 +635,9 @@ def make_episodes_for_scene(args):
         mapping_file="ovon/dataset/source_data/Mp3d_category_mapping.tsv",
         categories=None,
         coverage_meta_file="data/coverage_meta/train.pkl",
-        relationship_meta_file="data/relationships/relationships2d_train_1_filtered.pickle",
+        relationship_meta_file=(
+            "data/relationships/relationships2d_train_1_filtered.pickle"
+        ),
         frame_cov_thresh=0.05,
         goal_vp_cell_size=0.1,
         goal_vp_max_dist=1.0,
@@ -701,9 +702,10 @@ def make_episodes_for_split(
             items.append((s, outpath.format(split), deviceId))
 
         mp_ctx = multiprocessing.get_context("forkserver")
-        with mp_ctx.Pool(cpu_threads) as pool, tqdm(
-            total=len(scenes), position=0
-        ) as pbar:
+        with (
+            mp_ctx.Pool(cpu_threads) as pool,
+            tqdm(total=len(scenes), position=0) as pbar,
+        ):
             for _ in pool.imap_unordered(make_episodes_for_scene, items):
                 pbar.update()
     else:

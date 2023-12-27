@@ -81,10 +81,7 @@ class TransformerPolicyCore(PolicyCore):
         self._context_window = None
         self._att_mask = None
 
-
-        self.vis_encoder_net = Vc1Wrapper(
-            self._im_obs_space, config.vc1_use_b16
-        )
+        self.vis_encoder_net = Vc1Wrapper(self._im_obs_space, config.vc1_use_b16)
 
         if not self._train_visual_encoder:
             for param in self.vis_encoder_net.parameters():
@@ -155,9 +152,7 @@ class TransformerPolicyCore(PolicyCore):
             elif len(state_features) == 0:
                 hidden_window = visual_features
             else:
-                hidden_window = torch.cat(
-                    [visual_features, *state_features], dim=-1
-                )
+                hidden_window = torch.cat([visual_features, *state_features], dim=-1)
 
             return self.state_token_proj(hidden_window)
 
@@ -174,15 +169,11 @@ class TransformerPolicyCore(PolicyCore):
             # `visual_fc` expects an input of shape [batch_dim, hidden_dim] but
             # obs is of shape [batch_dim, context_size, hidden_dim]
             visual_features = self.visual_fc(
-                obs[PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY].flatten(
-                    end_dim=1
-                )
+                obs[PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY].flatten(end_dim=1)
             ).view(*batch_shape, -1)
         else:
             # Flatten the batch dimension
-            im_obs = {
-                k: obs[k].flatten(end_dim=1) for k in self._im_obs_space.keys()
-            }
+            im_obs = {k: obs[k].flatten(end_dim=1) for k in self._im_obs_space.keys()}
 
             with g_timer.avg_time("core.visual_encode_eval", level=1):
                 visual_features = self.vis_encoder_net(im_obs)
@@ -202,17 +193,12 @@ class TransformerPolicyCore(PolicyCore):
         # shape [batch_size, context_len, 1] and that extra 1 will produce the
         # wrong shape.
         last_valid_idxs = (
-            self._context_idxs[:max_context_window]
-            * att_masks.view(batch_shape)
+            self._context_idxs[:max_context_window] * att_masks.view(batch_shape)
         ).argmax(-1)
         lang_tokens = lang[torch.arange(batch_shape[0]), last_valid_idxs]
 
-        fetch_before_counts_cpu = (
-            obs[FETCH_BEFORE_COUNTS_K].cpu().numpy().tolist()
-        )
-        for batch_idx, fetch_before_count in enumerate(
-            fetch_before_counts_cpu
-        ):
+        fetch_before_counts_cpu = obs[FETCH_BEFORE_COUNTS_K].cpu().numpy().tolist()
+        for batch_idx, fetch_before_count in enumerate(fetch_before_counts_cpu):
             if fetch_before_count == 0:
                 continue
             # Shift the tensor to the right to make room for the data from before. The data on the right is anyways bad
@@ -222,9 +208,9 @@ class TransformerPolicyCore(PolicyCore):
             att_masks[batch_idx] = att_masks[batch_idx].roll(
                 shifts=fetch_before_count, dims=0
             )
-            hidden_window[batch_idx, :fetch_before_count] = obs[
-                START_HIDDEN_WINDOW_K
-            ][batch_idx, -fetch_before_count:]
+            hidden_window[batch_idx, :fetch_before_count] = obs[START_HIDDEN_WINDOW_K][
+                batch_idx, -fetch_before_count:
+            ]
             att_masks[batch_idx, :fetch_before_count] = obs[START_ATT_MASK_K][
                 batch_idx, -fetch_before_count:
             ]
@@ -255,14 +241,10 @@ class TransformerPolicyCore(PolicyCore):
         if latest_visual_feature is not None:
             latest_visual_feature = self.visual_fc(latest_visual_feature)
 
-        latest_hidden_window = self._proj_vis_features(
-            obs, latest_visual_feature
-        )
+        latest_hidden_window = self._proj_vis_features(obs, latest_visual_feature)
         if self._debug_mode:
             debug_info = obs["debug_info"]
-            latest_hidden_window = torch.cat(
-                [latest_hidden_window, debug_info], -1
-            )
+            latest_hidden_window = torch.cat([latest_hidden_window, debug_info], -1)
 
         # Combine the latest visual token with the history of visual tokens.
         # (Add seq_dim to the `latest_hidden_window`)
@@ -348,17 +330,14 @@ class TransformerPolicyCore(PolicyCore):
         ), f"Bad lang tokens: {lang_tokens}, obs {obs['vocab_lang_goal']}"
 
         # Ensure all windows are right shape.
-        assert (
-            hidden_out.shape[1] == att_masks.shape[1]
-        ), f"Got hidden window of shape {hidden_out.shape} and att masks of shape {att_masks.shape}"
+        assert hidden_out.shape[1] == att_masks.shape[1], (
+            f"Got hidden window of shape {hidden_out.shape} and att masks of shape"
+            f" {att_masks.shape}"
+        )
         diagnose_prefix = "rollout" if is_rollout else "eval"
 
-        with g_timer.avg_time(
-            f"core.forward.{diagnose_prefix}.decoder", level=1
-        ):
-            hidden_out = self.seq_model.decode(
-                lang_tokens, hidden_out, att_masks
-            )
+        with g_timer.avg_time(f"core.forward.{diagnose_prefix}.decoder", level=1):
+            hidden_out = self.seq_model.decode(lang_tokens, hidden_out, att_masks)
 
         with g_timer.avg_time(f"core.forward.{diagnose_prefix}.select_final"):
             if is_rollout:
@@ -367,12 +346,10 @@ class TransformerPolicyCore(PolicyCore):
                 check_att_masks = att_masks.cumprod(1)
                 for i, final_step_idx in enumerate(final_step_idxs):
                     # Check the step is valid.
-                    if (
-                        self._debug_mode
-                        and check_att_masks[i, final_step_idx] != 1
-                    ):
+                    if self._debug_mode and check_att_masks[i, final_step_idx] != 1:
                         raise ValueError(
-                            f"Selecting bad action index {final_step_idx=} for {check_att_masks[i]}"
+                            f"Selecting bad action index {final_step_idx=} for"
+                            f" {check_att_masks[i]}"
                         )
                     sel_hidden_out.append(hidden_out[i, final_step_idx])
 
@@ -381,9 +358,7 @@ class TransformerPolicyCore(PolicyCore):
             else:
                 assert len(hidden_out.shape) == 3
 
-        with g_timer.avg_time(
-            f"core.forward.{diagnose_prefix}.action_proj", level=1
-        ):
+        with g_timer.avg_time(f"core.forward.{diagnose_prefix}.action_proj", level=1):
             hidden_out = self.action_proj(hidden_out)
 
         return hidden_out, latest_hidden_window
@@ -415,9 +390,7 @@ def reverse_hidden_window(hidden_window, att_masks):
         final_step_idxs.append(roll_len - 1)
         # Roll the end to the start.
         sub_att_mask = att_masks[batch_idx].roll(roll_len, dims=0)
-        sub_hidden_windows.append(
-            hidden_window[batch_idx].roll(roll_len, dims=0)
-        )
+        sub_hidden_windows.append(hidden_window[batch_idx].roll(roll_len, dims=0))
 
         sub_att_masks.append(sub_att_mask)
 

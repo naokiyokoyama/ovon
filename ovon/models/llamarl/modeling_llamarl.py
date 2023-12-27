@@ -304,12 +304,10 @@ class LlamaRLAttention(nn.Module):
             o_proj_slices = self.o_proj.weight.split(
                 self.hidden_size // self.config.pretraining_tp, dim=1
             )
-            attn_output = sum(
-                [
-                    F.linear(attn_output[i], o_proj_slices[i])
-                    for i in range(self.config.pretraining_tp)
-                ]
-            )
+            attn_output = sum([
+                F.linear(attn_output[i], o_proj_slices[i])
+                for i in range(self.config.pretraining_tp)
+            ])
         else:
             attn_output = self.o_proj(attn_output)
 
@@ -428,10 +426,8 @@ LLAMARL_START_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    (
-        "The bare LLaMARL Model outputting raw hidden-states without any specific head"
-        " on top."
-    ),
+    "The bare LLaMARL Model outputting raw hidden-states without any specific head"
+    " on top.",
     LLAMARL_START_DOCSTRING,
 )
 class LlamaRLPreTrainedModel(PreTrainedModel):
@@ -522,10 +518,8 @@ LLAMARL_INPUTS_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    (
-        "The bare LLaMARL Model outputting raw hidden-states without any specific head"
-        " on top."
-    ),
+    "The bare LLaMARL Model outputting raw hidden-states without any specific head"
+    " on top.",
     LLAMARL_START_DOCSTRING,
 )
 class LlamaRLModel(LlamaRLPreTrainedModel):
@@ -676,13 +670,11 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
         else:
             raise ValueError("You have to specify inputs_embeds")
 
-        if any(
-            [
-                self.inter_episodes_attention,
-                self.reset_position_index,
-                self.add_sequence_idx_embed,
-            ]
-        ):
+        if any([
+            self.inter_episodes_attention,
+            self.reset_position_index,
+            self.add_sequence_idx_embed,
+        ]):
             assert attention_mask is not None
 
         seq_length_with_past = seq_length

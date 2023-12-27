@@ -248,7 +248,8 @@ def validate_cat_tag(line: str, tag_map_dict: dict):
         # No entry found for specified category tag, so assigning "unknown"
         new_line = line.replace(category_tag, '"unknown"')
         print(
-            f"No map entry for category tag in line : {line.strip()} : {category_tag} : len : {len(category_tag)}: modified : {new_line} "
+            f"No map entry for category tag in line : {line.strip()} : {category_tag} :"
+            f" len : {len(category_tag)}: modified : {new_line} "
         )
         ERROR_CAT_TAGS.add(category_tag)
     else:
@@ -280,7 +281,8 @@ def modify_and_copy_SSD(src_filename: str, dest_filename: str, tag_map_dict: dic
             valid_res = validate_src_SSD(line)
             if valid_res != "fine":
                 print(
-                    f"!!!! Error in source SSD `{src_filename}` on line {i} : {line} has format error : `{valid_res}`"
+                    f"!!!! Error in source SSD `{src_filename}` on line {i} :"
+                    f" {line} has format error : `{valid_res}`"
                 )
             if VALIDATE_TAG_SPELLING:
                 # Fix misspellings of category tag and rebuild line appropriately
@@ -293,7 +295,8 @@ def modify_and_copy_SSD(src_filename: str, dest_filename: str, tag_map_dict: dic
 
             if fileIsOffset and printFileOffset:
                 print(
-                    f"Erroneous line in source SSD `{src_filename}` corrected {i} : {line}",
+                    f"Erroneous line in source SSD `{src_filename}` corrected {i} :"
+                    f" {line}",
                     end="",
                 )
                 fileIsOffset = False
@@ -303,7 +306,8 @@ def modify_and_copy_SSD(src_filename: str, dest_filename: str, tag_map_dict: dic
     if VALIDATE_TAG_SPELLING:
         num_spell_corrections = len(tag_map_dict["temp_spelling_corrections_list"])
         print(
-            f"# of Spelling corrections made when saving {dest_filename} : {num_spell_corrections}"
+            f"# of Spelling corrections made when saving {dest_filename} :"
+            f" {num_spell_corrections}"
         )
         # file_name =
         # tag_map_dict['_num_spell_corrections']
@@ -377,7 +381,8 @@ def build_annotation_configs(part_file_list_dict: dict):
         if len(scene_path_list) == 0:
             continue
         print(
-            f"{config_key} # files : {len(scene_path_list)} : \n\t{src_config_filename}\n\t{dest_config_filename}"
+            f"{config_key} # files : {len(scene_path_list)} :"
+            f" \n\t{src_config_filename}\n\t{dest_config_filename}"
         )
 
         # load each existing json config, appropriately modify it, and then save as new configs
@@ -409,7 +414,8 @@ def build_annotation_configs(part_file_list_dict: dict):
             os_sep, 1
         )[-1]
         print(
-            f"Adding rel_config_filename : {rel_config_filename} to file list dictionary `base` key."
+            f"Adding rel_config_filename : {rel_config_filename} to file list"
+            " dictionary `base` key."
         )
         part_file_list_dict["base"].append(rel_config_filename)
 
@@ -499,7 +505,8 @@ def proc_and_copy_file(
             failures[src_dir][type_key] = filename
         if "SSD" in type_key:
             print(
-                f"\t\tSSD File {proc} been successfully modified and copied to {filename}"
+                f"\t\tSSD File {proc} been successfully modified and copied to"
+                f" {filename}"
             )
         else:
             print(f"\t\tGLB File {proc} been successfully copied to {filename}")
@@ -621,7 +628,8 @@ def process_and_copy_files(file_names_and_paths: dict):
     for _, files in part_file_list_dict.items():
         num_files_written += len(files)
     print(
-        f"# of src files processed : {len(file_names_and_paths)} | # of dest files written : {num_files_written} | # of failures : {len(failures)}\n ",
+        f"# of src files processed : {len(file_names_and_paths)} | # of dest files"
+        f" written : {num_files_written} | # of failures : {len(failures)}\n ",
         end="",
     )
     # Get relative paths to all 5 annotation configs (base and each partition), as well as
@@ -638,7 +646,8 @@ def process_and_copy_files(file_names_and_paths: dict):
         for src_dir, fail_dict in failures.items():
             for file_type, file_name in fail_dict.items():
                 print(
-                    f"Src : {src_dir} :\n\tType : {file_type} | Filename : {file_name} ",
+                    f"Src : {src_dir} :\n\tType : {file_type} | Filename :"
+                    f" {file_name} ",
                     end="",
                 )
 
@@ -678,7 +687,8 @@ def parse_SSD_file(ssd_filename: str):
             if not re.compile("^[a-fA-F0-9]{6}$").match(color):
                 counts_dict[color]["count"] = -1
                 print(
-                    f"WARNING!!! : In file :{ssd_filename} : Color has bad form : {color} : names : {counts_dict[color]['names']}"
+                    f"WARNING!!! : In file :{ssd_filename} : Color has bad form :"
+                    f" {color} : names : {counts_dict[color]['names']}"
                 )
             else:
                 counts_dict[color]["count"] += 1
@@ -730,11 +740,14 @@ def per_scene_clr_counts(file_names_and_paths: dict):
             names = count_and_names["names"]
             if count > 1:
                 print(
-                    f"!!! In scene {scenename} : Bad Color Count : '{color}' is present {count} times : {names}"
+                    f"!!! In scene {scenename} : Bad Color Count : '{color}' is present"
+                    f" {count} times : {names}"
                 )
             elif count < 0:
                 print(
-                    f"!!!!!!!! In scene {scenename} : Count for color : '{color}' is less than 0 : {count} times : {names}. This is due to erroneous color being found. "
+                    f"!!!!!!!! In scene {scenename} : Count for color : '{color}' is"
+                    f" less than 0 : {count} times : {names}. This is due to erroneous"
+                    " color being found. "
                 )
     print(f"Total Items :{total_items}\n", end="")
     return per_scene_counts
@@ -768,7 +781,8 @@ def color_annotation_reports(file_names_and_paths: dict):
                 objtype = name_parts[0].strip()
                 if not name_parts[1].strip().isdigit():
                     print(
-                        f"Object for objtype {objtype} is not parsed properly on `_` : complete name is {name}"
+                        f"Object for objtype {objtype} is not parsed properly on `_` :"
+                        f" complete name is {name}"
                     )
                 obj_names_per_objtype[objtype]["count"] += 1
                 obj_names_per_objtype[objtype]["names"].append(name)
@@ -856,7 +870,8 @@ def load_region_proposals():
         derived_proposal_dict[syn_tag_key]["synonym_tag"] = synonym_tag_str
 
     print(
-        f"Currently have {known} known region named tags and {unknown} unknown region named tags."
+        f"Currently have {known} known region named tags and {unknown} unknown region"
+        " named tags."
     )
 
     return derived_proposal_dict
@@ -1095,7 +1110,8 @@ def build_tag_info_dict(per_scene_regions: dict, vote_count_dict: dict):
                         proposal_dict,
                         vote_dicts,
                         neighbor_dict,
-                        f"Aggregate for {proposal_dict[tag]['ground_truth']}:{proposal_dict[tag]['synonym_tag']}",
+                        "Aggregate for"
+                        f" {proposal_dict[tag]['ground_truth']}:{proposal_dict[tag]['synonym_tag']}",
                         region,
                         scenename,
                         tagged_obj_list,
@@ -1192,18 +1208,33 @@ def save_per_cat_data(
     )
 
     print(
-        f"Save\n\tper-tag region proposals as {per_tag_region_props_filename}\n\tper-tag region neighbors as {per_tag_region_neighborhoods}\n\tper-tag scene and region info as {per_tag_scene_region_info}"
+        "Save\n\tper-tag region proposals as"
+        f" {per_tag_region_props_filename}\n\tper-tag region neighbors as"
+        f" {per_tag_region_neighborhoods}\n\tper-tag scene and region info as"
+        f" {per_tag_scene_region_info}"
     )
     if print_debug:
         print("All per-tag votes :")
     # Save per category pre region name votes as dest1 and save per category neighbor listings as dest2 and per-tag scene and region info as dest3
-    with open(os_join(per_tag_region_props_filename), "w",) as dest1, open(
-        per_tag_region_neighborhoods,
-        "w",
-    ) as dest2, open(per_tag_scene_region_info, "w",) as dest3, open(
-        per_category_counts_ignore, "w"
-    ) as dest4:
-        header_tag = "Category Tag,# of Scenes,# of Regions,Regions per Scene,# of Instances,Mean Instances per Scene,Mean Instances per Region"
+    with (
+        open(
+            os_join(per_tag_region_props_filename),
+            "w",
+        ) as dest1,
+        open(
+            per_tag_region_neighborhoods,
+            "w",
+        ) as dest2,
+        open(
+            per_tag_scene_region_info,
+            "w",
+        ) as dest3,
+        open(per_category_counts_ignore, "w") as dest4,
+    ):
+        header_tag = (
+            "Category Tag,# of Scenes,# of Regions,Regions per Scene,# of"
+            " Instances,Mean Instances per Scene,Mean Instances per Region"
+        )
         dest1.write(f"{header_tag},GT Name (if specified),{votes_header_str}\n")
         dest2.write(f"{header_tag},# of Neighbors,Neighbors and per-region counts\n")
         dest3.write(f"Scene ID,Region ID,{header_tag},Instance count in region\n")
@@ -1230,10 +1261,12 @@ def save_per_cat_data(
                 gt_str = f"Specified Ground Truth name : {gt_file_str}\n\t"
             if print_debug:
                 print(
-                    f"\n{tag} :\nIn {num_scenes} scenes, {num_regions} regions, {num_instances} objs total"
+                    f"\n{tag} :\nIn {num_scenes} scenes, {num_regions} regions,"
+                    f" {num_instances} objs total"
                 )
                 print(
-                    f"\t{gt_str}Per Region Votes {vote_type_str} : {build_string_of_region_votes(vote_dict, True)}"
+                    f"\t{gt_str}Per Region Votes {vote_type_str} :"
+                    f" {build_string_of_region_votes(vote_dict, True)}"
                 )
                 print(f"\tScene-Regions present :{scene_regions_str}")
                 print(f"\tNeighbors :{neighbor_str}")
@@ -1346,21 +1379,36 @@ def save_per_scene_region_data(
     per_scene_total_weighted_votes = os_join(
         HM3D_ANNOTATION_RPT_DEST_DIR, "Per_Scene_Total_Weighted_Votes.csv"
     )
-    with open(per_scene_per_region_votes, "w",) as dest4, open(
-        per_scene_per_region_weighted_votes,
-        "w",
-    ) as dest5, open(per_scene_total_votes, "w",) as dest6, open(
-        per_scene_total_weighted_votes,
-        "w",
-    ) as dest7:
-        room_counts_hdr_str = f"# {'s,# '.join([name.capitalize() for name in sorted(POSSIBLE_REGION_NAMES)])}s"
+    with (
+        open(
+            per_scene_per_region_votes,
+            "w",
+        ) as dest4,
+        open(
+            per_scene_per_region_weighted_votes,
+            "w",
+        ) as dest5,
+        open(
+            per_scene_total_votes,
+            "w",
+        ) as dest6,
+        open(
+            per_scene_total_weighted_votes,
+            "w",
+        ) as dest7,
+    ):
+        room_counts_hdr_str = (
+            f"# {'s,# '.join([name.capitalize() for name in sorted(POSSIBLE_REGION_NAMES)])}s"
+        )
         dest4.write(f"Scene Name,Region #,{votes_header_str},Room Proposal\n")
         dest5.write(f"Scene Name,Region #,{votes_header_str},Weighted Room Proposal\n")
         dest6.write(
-            f"Scene Name,{room_counts_hdr_str},{vote_type_str} Votes:,{votes_header_str}\n"
+            "Scene"
+            f" Name,{room_counts_hdr_str},{vote_type_str} Votes:,{votes_header_str}\n"
         )
         dest7.write(
-            f"Scene Name,{room_counts_hdr_str},{vote_type_str} Votes:,{votes_header_str}\n"
+            "Scene"
+            f" Name,{room_counts_hdr_str},{vote_type_str} Votes:,{votes_header_str}\n"
         )
 
         for scenename, region_dict in sorted(per_scene_per_region_dict.items()):
@@ -1396,12 +1444,9 @@ def save_per_scene_region_data(
             ttl_rooms_count_str = ",".join(
                 [f"{ttl_scene_rooms[k]}" for k in sorted(POSSIBLE_REGION_NAMES)]
             )
-            ttl_rooms_count_weighted_str = ",".join(
-                [
-                    f"{ttl_scene_rooms_weighted[k]}"
-                    for k in sorted(POSSIBLE_REGION_NAMES)
-                ]
-            )
+            ttl_rooms_count_weighted_str = ",".join([
+                f"{ttl_scene_rooms_weighted[k]}" for k in sorted(POSSIBLE_REGION_NAMES)
+            ])
             dest6.write(f"{scenename},{ttl_rooms_count_str},,{ttl_vote_region_str}\n")
             dest7.write(
                 f"{scenename},{ttl_rooms_count_weighted_str},,{ttl_vote_region_str}\n"
@@ -1416,16 +1461,27 @@ def save_per_scene_region_data(
     per_scene_neighborhoods = os_join(
         HM3D_ANNOTATION_RPT_DEST_DIR, "Per_Scene_Neighborhood_Stats.csv"
     )
-    with open(per_scene_per_region_neighborhoods, "w",) as dest8, open(
-        per_scene_neighborhoods,
-        "w",
-    ) as dest9:
+    with (
+        open(
+            per_scene_per_region_neighborhoods,
+            "w",
+        ) as dest8,
+        open(
+            per_scene_neighborhoods,
+            "w",
+        ) as dest9,
+    ):
         dest8.write(
-            "Scene Name,Region #,# Unique Categories,# Objects,Object Instances in Region,Category\n"
+            "Scene Name,Region #,# Unique Categories,# Objects,Object Instances in"
+            " Region,Category\n"
         )
 
         dest9.write(
-            "Scene Name,# Regions,# Unique Categories,Per Region Cat Mean,Per Region Cat Var,Per Region Cat Std,Per Region Cat Skew,Per Region Cat Kurt,Per Region Cat Ex Kurt,# Objects,Per Region Object Mean,Per Region Object Var,Per Region Object Std,Per Region Object Skew,Per Region Object Kurt,Per Region Object Ex Kurt\n"
+            "Scene Name,# Regions,# Unique Categories,Per Region Cat Mean,Per Region"
+            " Cat Var,Per Region Cat Std,Per Region Cat Skew,Per Region Cat Kurt,Per"
+            " Region Cat Ex Kurt,# Objects,Per Region Object Mean,Per Region Object"
+            " Var,Per Region Object Std,Per Region Object Skew,Per Region Object"
+            " Kurt,Per Region Object Ex Kurt\n"
         )
         ttl_regions = 0
         ttl_objs = 0
@@ -1511,7 +1567,9 @@ def save_per_scene_region_data(
         for k, stat_dict in scene_wide_stats.items():
             target = k.capitalize()
             dest9.write(
-                f"\n{target}s,Per Scene {target} Mean,Per Scene {target} Var,Per Scene {target} Std,Per Scene {target} Skew,Per Scene {target} Kurt,Per Scene {target} Ex Kurt\n"
+                f"\n{target}s,Per Scene {target} Mean,Per Scene {target} Var,Per Scene"
+                f" {target} Std,Per Scene {target} Skew,Per Scene {target} Kurt,Per"
+                f" Scene {target} Ex Kurt\n"
             )
             dest9.write(f"All Scenes,{stat_dict['mmnt_str']}\n")
 
@@ -1551,7 +1609,8 @@ def save_scene_region_tag_maps(per_scene_regions: dict):
         "w",
     ) as dest:
         dest.write(
-            f"Scene,Region,# of Tags,Relevant Tags in Region (Excluding : {IGNORE_TAGS_str})\n"
+            "Scene,Region,# of Tags,Relevant Tags in Region (Excluding :"
+            f" {IGNORE_TAGS_str})\n"
         )
         for scenename, region_dict in per_scene_regions.items():
             for region, tag_dict in sorted(region_dict.items()):
@@ -1571,13 +1630,11 @@ def build_str_of_scene_regions(regions_present: dict, sep_per_line: bool):
     if sep_per_line:
         join_char = "\n"
 
-    return f"{join_char}".join(
-        [
-            f"{scene}_{region}:{counts['obj_count']}"
-            for scene, region_dict in sorted(regions_present.items())
-            for region, counts in sorted(region_dict.items())
-        ]
-    )
+    return f"{join_char}".join([
+        f"{scene}_{region}:{counts['obj_count']}"
+        for scene, region_dict in sorted(regions_present.items())
+        for region, counts in sorted(region_dict.items())
+    ])
 
 
 # Build string of passed category tags and counts. These are the neighbors of a
@@ -1592,28 +1649,24 @@ def build_str_of_shared_cats(
         start_char = "\t"
     # return string sorted by count
     if ignore_common:
-        return f"{join_char}".join(
-            [
-                f"{start_char}{k}:{v}"
-                for k, v in sorted(
-                    neighbor_dict.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-                if k not in IGNORE_TAGS
-            ]
-        )
+        return f"{join_char}".join([
+            f"{start_char}{k}:{v}"
+            for k, v in sorted(
+                neighbor_dict.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            if k not in IGNORE_TAGS
+        ])
     else:
-        return f"{join_char}".join(
-            [
-                f"{start_char}{k}:{v}"
-                for k, v in sorted(
-                    neighbor_dict.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            ]
-        )
+        return f"{join_char}".join([
+            f"{start_char}{k}:{v}"
+            for k, v in sorted(
+                neighbor_dict.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ])
 
 
 # Build string of category tags present in specified tags list, ignoring
@@ -1635,13 +1688,11 @@ def build_string_of_region_votes(
     votes_dict: dict, ignore_0_votes: Optional[bool] = False
 ):
     if ignore_0_votes:
-        val_str = ",".join(
-            [
-                f"{k}:{votes_dict[k]}"
-                for k in sorted(POSSIBLE_REGION_NAMES)
-                if votes_dict[k] != 0
-            ]
-        )
+        val_str = ",".join([
+            f"{k}:{votes_dict[k]}"
+            for k in sorted(POSSIBLE_REGION_NAMES)
+            if votes_dict[k] != 0
+        ])
     else:
         val_str = ",".join(
             [f"{k}:{votes_dict[k]}" for k in sorted(POSSIBLE_REGION_NAMES)]
@@ -1656,7 +1707,8 @@ def debug_show_region_tags(per_scene_regions: dict):
         num_regions += len(region_dict)
         for region, tag_dict in sorted(region_dict.items()):
             print(
-                f"\t#{region} has {len(tag_dict)} unique object tags : {';'.join(tag_dict.keys())}"
+                f"\t#{region} has {len(tag_dict)} unique object tags :"
+                f" {';'.join(tag_dict.keys())}"
             )
             # for tag, nameslist in sorted(tag_dict.items()):
             #     if tag != "unknown":
@@ -1710,8 +1762,9 @@ def build_file_listing():
         )
         if len(src_file_list) != 2:
             print(
-                f"Problem with source dir files {dirname_full} : Unable to find 2 source files "
-                f"({len(src_file_list)} files instead) so skipping this source dir."
+                f"Problem with source dir files {dirname_full} : Unable to find 2"
+                f" source files ({len(src_file_list)} files instead) so skipping this"
+                " source dir."
             )
             continue
         # find appropriate destination directory for given source scene
@@ -1758,8 +1811,9 @@ def build_file_listing():
 
         else:
             print(
-                f"Problem with source dir {dirname_full} : Unable to find destination dir due to {len(dest_dir_list)} "
-                f"matching destinations in current HM3D dataset so skipping this source dir.",
+                f"Problem with source dir {dirname_full} : Unable to find destination"
+                f" dir due to {len(dest_dir_list)} matching destinations in current"
+                " HM3D dataset so skipping this source dir.",
                 end="",
             )
             for bad_dest in dest_dir_list:

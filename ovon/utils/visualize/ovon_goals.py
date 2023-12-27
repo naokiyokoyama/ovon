@@ -158,12 +158,10 @@ def save_object_goals_for_dataset(path, output_path):
 
     object_goals = []
     for object_category, paths in object_goal_meta.items():
-        object_goals.append(
-            {
-                "object_category": object_category,
-                "object_goals": random.sample(paths, min(len(paths), 3)),
-            }
-        )
+        object_goals.append({
+            "object_category": object_category,
+            "object_goals": random.sample(paths, min(len(paths), 3)),
+        })
 
     write_json(object_goals, os.path.join(output_path, "object_goals.json"))
 

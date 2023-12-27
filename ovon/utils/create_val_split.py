@@ -188,23 +188,19 @@ def split_val_unseen(path, output_path, n_bins=50):
     print("Total train categories: {}".format(len(train_categories)))
     print("Total val categories: {}".format(len(val_categories)))
 
-    df = pd.DataFrame(
-        {
-            "category": list(category_count.keys()),
-            "instances": list(category_count.values()),
-        }
-    )
+    df = pd.DataFrame({
+        "category": list(category_count.keys()),
+        "instances": list(category_count.values()),
+    })
     df.sort_values(by="instances", inplace=True, ascending=False)
     print(df.columns)
 
     df.to_csv(os.path.join(output_path, "all_category_count.csv"), index=False)
 
-    df = pd.DataFrame(
-        {
-            "category": list(val_category_count.keys()),
-            "instances": list(val_category_count.values()),
-        }
-    )
+    df = pd.DataFrame({
+        "category": list(val_category_count.keys()),
+        "instances": list(val_category_count.values()),
+    })
     df.sort_values(by="instances", inplace=True, ascending=False)
     df.to_csv(os.path.join(output_path, "val_category_count.csv"), index=False)
 

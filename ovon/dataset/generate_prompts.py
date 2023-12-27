@@ -116,22 +116,16 @@ class PromptGenerator:
             action_space={
                 "look_up": habitat_sim.ActionSpec(
                     "look_up",
-                    habitat_sim.ActuationSpec(
-                        amount=self.start_poses_tilt_angle
-                    ),
+                    habitat_sim.ActuationSpec(amount=self.start_poses_tilt_angle),
                 ),
                 "look_down": habitat_sim.ActionSpec(
                     "look_down",
-                    habitat_sim.ActuationSpec(
-                        amount=self.start_poses_tilt_angle
-                    ),
+                    habitat_sim.ActuationSpec(amount=self.start_poses_tilt_angle),
                 ),
             },
         )
 
-        sim = habitat_sim.Simulator(
-            habitat_sim.Configuration(sim_cfg, [agent_cfg])
-        )
+        sim = habitat_sim.Simulator(habitat_sim.Configuration(sim_cfg, [agent_cfg]))
 
         # set the navmesh
         assert sim.pathfinder.is_loaded, "pathfinder is not loaded!"
@@ -151,21 +145,15 @@ class PromptGenerator:
             exist_ok=True,
         )
         (ToPILImage()(img)).convert("RGB").save(
-            os.path.join(
-                self.outpath.format("images"), f"{scene_key}/{img_ref}.png"
-            )
+            os.path.join(self.outpath.format("images"), f"{scene_key}/{img_ref}.png")
         )
 
     def save_meta_file(self, relationships, scene_key):
         with open(
-            os.path.join(
-                self.outpath.format("relationships"), f"{scene_key}.pkl"
-            ),
+            os.path.join(self.outpath.format("relationships"), f"{scene_key}.pkl"),
             "wb",
         ) as handle:
-            pickle.dump(
-                relationships, handle, protocol=pickle.HIGHEST_PROTOCOL
-            )
+            pickle.dump(relationships, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def create_html(
         self,
@@ -279,9 +267,7 @@ class PromptGenerator:
         else:
             rel = f"{name_b} near {name_a}"
 
-        check, view = get_best_viewpoint_with_posesampler(
-            sim, pose_sampler, [a, b]
-        )
+        check, view = get_best_viewpoint_with_posesampler(sim, pose_sampler, [a, b])
         if check:
             cov, pose, _ = view
             agent.set_state(pose)
@@ -301,9 +287,7 @@ class PromptGenerator:
     ):
         """Finds spatial relationship [above, below, near] from
         the 2D viewpoint with BB for objects and returns image"""
-        check, view = get_best_viewpoint_with_posesampler(
-            sim, pose_sampler, [a, b]
-        )
+        check, view = get_best_viewpoint_with_posesampler(sim, pose_sampler, [a, b])
         name_b = b.category.name()
         name_a = a.category.name()
 
@@ -311,9 +295,7 @@ class PromptGenerator:
             cov, pose, _ = view
             agent.set_state(pose)
             obs = sim.get_sensor_observations()
-            total_obs_area = (
-                obs["semantic"].shape[0] * obs["semantic"].shape[1]
-            )
+            total_obs_area = obs["semantic"].shape[0] * obs["semantic"].shape[1]
             drawn_img, bb, area = get_bounding_box(obs, [a, b])
 
             def get_intersection_area(boxA, boxB, total_obs_area):
@@ -337,14 +319,14 @@ class PromptGenerator:
 
                 # Check if edge of intersection is the left or right edges
                 # Height of intersection rectangle will be greater than width
-                side_intersection = max(
-                    (inter_ymax - inter_ymin), 0
-                ) > 2 * max((inter_xmax - inter_xmin, 0))
+                side_intersection = max((inter_ymax - inter_ymin), 0) > 2 * max(
+                    (inter_xmax - inter_xmin, 0)
+                )
 
                 # Check if width of intersection rectangle is nearly equal to size of smaller rectangle
-                lower_edge_covered = max(
-                    (inter_xmax - inter_xmin), 0
-                ) > 0.85 * (min(xA, xB))
+                lower_edge_covered = max((inter_xmax - inter_xmin), 0) > 0.85 * (
+                    min(xA, xB)
+                )
 
                 is_near = side_intersection or (not lower_edge_covered)
                 is_b_above_a = False
@@ -428,9 +410,7 @@ class PromptGenerator:
 
         return False, None, None, None, None, None
 
-    def is_close_to(
-        self, obj_a: SemanticObject, obj_b: SemanticObject
-    ) -> Tuple:
+    def is_close_to(self, obj_a: SemanticObject, obj_b: SemanticObject) -> Tuple:
         def get_surface_points(obj_a: SemanticObject) -> np.ndarray:
             xmin, ymin, zmin = obj_a.aabb.center - obj_a.aabb.sizes / 2
             xmax, ymax, zmax = obj_a.aabb.center + obj_a.aabb.sizes / 2
@@ -439,35 +419,21 @@ class PromptGenerator:
             y_coords = np.linspace(ymin, ymax, num=100)
             z_coords = np.linspace(zmin, zmax, num=100)
 
-            points_minx = np.array(
-                [(xmin, y, z) for y, z in zip(y_coords, z_coords)]
-            )
-            points_maxx = np.array(
-                [(xmax, y, z) for y, z in zip(y_coords, z_coords)]
-            )
-            points_miny = np.array(
-                [(x, ymin, z) for x, z in zip(x_coords, z_coords)]
-            )
-            points_maxy = np.array(
-                [(x, ymax, z) for x, z in zip(x_coords, z_coords)]
-            )
-            points_minz = np.array(
-                [(x, y, zmin) for x, y in zip(x_coords, y_coords)]
-            )
-            points_maxz = np.array(
-                [(x, y, zmax) for x, y in zip(x_coords, y_coords)]
-            )
+            points_minx = np.array([(xmin, y, z) for y, z in zip(y_coords, z_coords)])
+            points_maxx = np.array([(xmax, y, z) for y, z in zip(y_coords, z_coords)])
+            points_miny = np.array([(x, ymin, z) for x, z in zip(x_coords, z_coords)])
+            points_maxy = np.array([(x, ymax, z) for x, z in zip(x_coords, z_coords)])
+            points_minz = np.array([(x, y, zmin) for x, y in zip(x_coords, y_coords)])
+            points_maxz = np.array([(x, y, zmax) for x, y in zip(x_coords, y_coords)])
 
-            points = np.concatenate(
-                (
-                    points_minx,
-                    points_maxx,
-                    points_miny,
-                    points_maxy,
-                    points_minz,
-                    points_maxz,
-                )
-            )
+            points = np.concatenate((
+                points_minx,
+                points_maxx,
+                points_miny,
+                points_maxy,
+                points_minz,
+                points_maxz,
+            ))
             return points
 
         pts_a = get_surface_points(obj_a)
@@ -491,9 +457,7 @@ class PromptGenerator:
             for o in sim.semantic_scene.objects
             if self.cat_map[o.category.name()] is not None
         ]
-        os.makedirs(
-            f"data/images/relationships_{self.dim}d/{scene}", exist_ok=True
-        )
+        os.makedirs(f"data/images/relationships_{self.dim}d/{scene}", exist_ok=True)
         all_relationships = []
         for a in objects:
             for b in objects:
@@ -524,23 +488,21 @@ class PromptGenerator:
                         for reln in ["above", "below", "near", "on"]:
                             if reln in name:
                                 current_rel = reln
-                        all_relationships.append(
-                            {
-                                "scene": scene,
-                                "relation": current_rel,
-                                "ref_object": name_a,
-                                "target_object": name_b,
-                                "ref_obj_semantic_id": a.semantic_id,
-                                "target_obj_semantic_id": b.semantic_id,
-                                "distance": min_distance,
-                                "cov": cov,
-                                "area": frac,
-                                "name": name,
-                                "img_ref": img_ref,
-                                "bbA": bbs[0],
-                                "bbB": bbs[1],
-                            }
-                        )
+                        all_relationships.append({
+                            "scene": scene,
+                            "relation": current_rel,
+                            "ref_object": name_a,
+                            "target_object": name_b,
+                            "ref_obj_semantic_id": a.semantic_id,
+                            "target_obj_semantic_id": b.semantic_id,
+                            "distance": min_distance,
+                            "cov": cov,
+                            "area": frac,
+                            "name": name,
+                            "img_ref": img_ref,
+                            "bbA": bbs[0],
+                            "bbB": bbs[1],
+                        })
                         self.save_img(img, scene, img_ref)
         sim.close()
         return all_relationships
@@ -553,7 +515,9 @@ def find_relationships_for_scene(args):
     scene_key = os.path.basename(scene).split(".")[0]
 
     prompt_generator = PromptGenerator(
-        semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
+        semantic_spec_filepath=(
+            "data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
+        ),
         img_size=(2048, 2048),
         hfov=90,
         agent_height=1.41,
@@ -581,14 +545,10 @@ def find_relationships_for_scene(args):
     )
     print(f"Starting scene: {scene_key}")
     relationships = prompt_generator.get_spatial_relationships(scene=scene_key)
-    prompt_generator.save_meta_file(
-        relationships=relationships, scene_key=scene_key
-    )
+    prompt_generator.save_meta_file(relationships=relationships, scene_key=scene_key)
 
     if vis:
-        html_outpath = os.path.join(
-            outpath.format("webpage"), f"{scene_key}.html"
-        )
+        html_outpath = os.path.join(outpath.format("webpage"), f"{scene_key}.html")
         prompt_generator.create_html(html_outpath, relationships, dim=dim)
 
 
@@ -609,18 +569,12 @@ def find_relationships_for_split(
     if num_scenes is None:
         num_scenes = len(scenes)
 
-    deviceIds = GPUtil.getAvailable(
-        order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
-    )
+    deviceIds = GPUtil.getAvailable(order="memory", limit=1, maxLoad=1.0, maxMemory=1.0)
 
     if multiprocessing_enabled:
         gpus = len(GPUtil.getAvailable(limit=256))
         cpu_threads = gpus * 16
-        print(
-            "In multiprocessing setup - cpu {}, GPU: {}".format(
-                cpu_threads, gpus
-            )
-        )
+        print("In multiprocessing setup - cpu {}, GPU: {}".format(cpu_threads, gpus))
         items = []
         for i, s in enumerate(scenes[:num_scenes]):
             deviceId = deviceIds[0]
@@ -629,18 +583,15 @@ def find_relationships_for_split(
             items.append((s, outpath, deviceId, dim, vis))
 
         mp_ctx = multiprocessing.get_context("forkserver")
-        with mp_ctx.Pool(cpu_threads) as pool, tqdm(
-            total=len(scenes[:num_scenes]), position=0
-        ) as pbar:
+        with (
+            mp_ctx.Pool(cpu_threads) as pool,
+            tqdm(total=len(scenes[:num_scenes]), position=0) as pbar,
+        ):
             for _ in pool.imap_unordered(find_relationships_for_scene, items):
                 pbar.update()
     else:
-        for scene in tqdm(
-            scenes[:num_scenes], total=len(scenes), dynamic_ncols=True
-        ):
-            find_relationships_for_scene(
-                (scene, outpath, deviceIds[0], dim, vis)
-            )
+        for scene in tqdm(scenes[:num_scenes], total=len(scenes), dynamic_ncols=True):
+            find_relationships_for_scene((scene, outpath, deviceIds[0], dim, vis))
 
 
 if __name__ == "__main__":

@@ -128,13 +128,11 @@ class OVRLPolicyNet(Net):
             )
         else:
             fuse_keys = ["rgb"]
-            use_obs_space = spaces.Dict(
-                {
-                    k: observation_space.spaces[k]
-                    for k in fuse_keys
-                    if len(observation_space.spaces[k].shape) == 3
-                }
-            )
+            use_obs_space = spaces.Dict({
+                k: observation_space.spaces[k]
+                for k in fuse_keys
+                if len(observation_space.spaces[k].shape) == 3
+            })
 
             self.visual_encoder = HabitatResNetEncoder(
                 observation_space=use_obs_space,
@@ -480,14 +478,12 @@ class ResNetCLIPGoalEncoder(nn.Module):
             ]
         else:
             preprocess_transforms = []
-        preprocess_transforms.extend(
-            [
-                # already tensor, but want float
-                T.ConvertImageDtype(torch.float),
-                # normalize with CLIP mean, std
-                preprocess.transforms[4],
-            ]
-        )
+        preprocess_transforms.extend([
+            # already tensor, but want float
+            T.ConvertImageDtype(torch.float),
+            # normalize with CLIP mean, std
+            preprocess.transforms[4],
+        ])
         self.preprocess = T.Compose(preprocess_transforms)
         # expected output: H x W x C (np.float32)
 

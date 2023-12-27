@@ -33,6 +33,7 @@ class ClipObjectGoalSensor(Sensor):
         dataset: a Object Goal navigation dataset that contains dictionaries
         of categories id to text mapping.
     """
+
     cls_uuid: str = "clip_objectgoal"
 
     def __init__(
@@ -185,6 +186,7 @@ class ImageGoalRotationSensor(Sensor):
         sim: reference to the simulator for calculating task observations.
         config: config for the ImageGoal sensor.
     """
+
     cls_uuid: str = "image_goal_rotation"
 
     def __init__(self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any):
@@ -257,6 +259,7 @@ class CurrentEpisodeUUIDSensor(Sensor):
         sim: reference to the simulator for calculating task observations.
         config: config for the ImageGoal sensor.
     """
+
     cls_uuid: str = "current_episode_uuid"
 
     def __init__(self, *args: Any, sim: Simulator, config: "DictConfig", **kwargs: Any):

@@ -129,13 +129,10 @@ def create_html(
                             </div>
                             """
             html_body += "</div>"
-    html_body = (
-        f"""
+    html_body = f"""
                 <body>
                 <h2> Visualising {cnt} objects </h2>
-                """
-        + html_body
-    )
+                """ + html_body
     html_body += """</body>
                     </html>"""
     f = open(file_name, "w")
@@ -192,9 +189,7 @@ def get_objnav_config(i: int, scene: str):
 
 
 def get_simulator(objnav_config) -> Simulator:
-    sim = habitat.sims.make_sim(
-        "Sim-v0", config=objnav_config.habitat.simulator
-    )
+    sim = habitat.sims.make_sim("Sim-v0", config=objnav_config.habitat.simulator)
     navmesh_settings = habitat_sim.NavMeshSettings()
     navmesh_settings.set_defaults()
     navmesh_settings.agent_radius = (
@@ -278,9 +273,7 @@ def get_objects_for_scene(args) -> None:
 
     object_view_data = []
     objects_info = list(
-        filter(
-            lambda obj: cat_map[obj.category.name()] is not None, objects_info
-        )
+        filter(lambda obj: cat_map[obj.category.name()] is not None, objects_info)
     )
 
     for object in objects_info:
@@ -288,18 +281,14 @@ def get_objects_for_scene(args) -> None:
         if is_on_ceiling(sim, object.aabb):
             continue
 
-        check, view = get_best_viewpoint_with_posesampler(
-            sim, pose_sampler, [object]
-        )
+        check, view = get_best_viewpoint_with_posesampler(sim, pose_sampler, [object])
         if check:
             cov, pose, _ = view
             if cov < 0.05:
                 continue
             agent.set_state(pose)
             obs = sim.get_sensor_observations()
-            object_ids_in_view = get_all_objects_in_view(
-                obs, object.semantic_id
-            )
+            object_ids_in_view = get_all_objects_in_view(obs, object.semantic_id)
             objects_in_view = list(
                 filter(
                     lambda obj: obj is not None
@@ -313,7 +302,7 @@ def get_objects_for_scene(args) -> None:
             colors = get_color(obs, [object] + objects_in_view)
             depths = get_depth(obs, [object] + objects_in_view)
             drawn_img, bbs, area_covered = get_bounding_box(
-                obs, [object] + objects_in_view, depths = depths
+                obs, [object] + objects_in_view, depths=depths
             )
             if np.sum(area_covered) > 0:
                 # Save information of this object and all objects on top
@@ -364,21 +353,15 @@ def get_objects_for_split(
     """Makes episodes for all scenes in a split"""
 
     scenes = sorted(
-        list(
-            get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[
-                split
-            ]
-        )
+        list(get_hm3d_semantic_scenes("data/scene_datasets/hm3d", [split])[split])
     )
     num_scenes = len(scenes) if num_scenes is None else num_scenes
     scenes = scenes[:num_scenes]
 
-    scenes =['vLpv2VX547B']
+    scenes = ["vLpv2VX547B"]
     print(scenes)
     print(
-        "Starting visualisation for split {} with {} scenes".format(
-            split, len(scenes)
-        )
+        "Starting visualisation for split {} with {} scenes".format(split, len(scenes))
     )
 
     os.makedirs(os.path.join(outpath.format(split), "meta"), exist_ok=True)
@@ -389,11 +372,7 @@ def get_objects_for_split(
         deviceIds = GPUtil.getAvailable(
             order="memory", limit=1, maxLoad=1.0, maxMemory=1.0
         )
-        print(
-            "In multiprocessing setup - cpu {}, GPU: {}".format(
-                cpu_threads, gpus
-            )
-        )
+        print("In multiprocessing setup - cpu {}, GPU: {}".format(cpu_threads, gpus))
 
         items = []
         for i, s in enumerate(scenes):
@@ -403,9 +382,10 @@ def get_objects_for_split(
             items.append((s, outpath.format(split), deviceId))
 
         mp_ctx = multiprocessing.get_context("forkserver")
-        with mp_ctx.Pool(cpu_threads) as pool, tqdm(
-            total=len(scenes), position=0
-        ) as pbar:
+        with (
+            mp_ctx.Pool(cpu_threads) as pool,
+            tqdm(total=len(scenes), position=0) as pbar,
+        ):
             for _ in pool.imap_unordered(get_objects_for_scene, items):
                 pbar.update()
     else:
@@ -436,9 +416,7 @@ if __name__ == "__main__":
         help="number of scenes",
         type=int,
     )
-    parser.add_argument(
-        "--tasks_per_gpu", help="number of scenes", type=int, default=1
-    )
+    parser.add_argument("--tasks_per_gpu", help="number of scenes", type=int, default=1)
     parser.add_argument(
         "-m",
         "--multiprocessing_enabled",

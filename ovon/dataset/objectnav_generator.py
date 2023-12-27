@@ -535,16 +535,14 @@ class ObjectGoalGenerator:
             if radius > self.max_viewpoint_radius:
                 continue
 
-            viewpoints.append(
-                {
-                    "agent_state": {
-                        "position": state.position.tolist(),
-                        "rotation": quat_to_coeffs(state.rotation).tolist(),
-                    },
-                    "iou": 0.0,
-                    "radius": radius,
-                }
-            )
+            viewpoints.append({
+                "agent_state": {
+                    "position": state.position.tolist(),
+                    "rotation": quat_to_coeffs(state.rotation).tolist(),
+                },
+                "iou": 0.0,
+                "radius": radius,
+            })
         return viewpoints
 
     def _make_goal(
@@ -748,15 +746,13 @@ class ObjectGoalGenerator:
                 print("Start poses none for: {}".format(object_category))
                 continue
 
-            all_goals.append(
-                {
-                    "object_goals": goals,
-                    "start_positions": start_positions,
-                    "start_rotations": start_rotations,
-                    "geodesic_distances": geodesic_distances,
-                    "euclidean_distances": euclidean_distances,
-                }
-            )
+            all_goals.append({
+                "object_goals": goals,
+                "start_positions": start_positions,
+                "start_rotations": start_rotations,
+                "geodesic_distances": geodesic_distances,
+                "euclidean_distances": euclidean_distances,
+            })
         sim.close()
         return all_goals
 
@@ -957,7 +953,9 @@ def make_episodes_for_scene(args):
         categories = load_json("data/hm3d_meta/ovon_val_splits.json")
 
     objectgoal_maker = ObjectGoalGenerator(
-        semantic_spec_filepath="data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json",
+        semantic_spec_filepath=(
+            "data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
+        ),
         img_size=(512, 512),
         hfov=90,
         agent_height=1.41,
@@ -1039,38 +1037,35 @@ def make_episodes_for_split(
             deviceId = deviceIds[0]
             if i < gpus * tasks_per_gpu or len(deviceIds) == 0:
                 deviceId = i % gpus
-            items.append(
-                (
-                    s,
-                    outpath.format(split),
-                    deviceId,
-                    split,
-                    start_poses_per_object,
-                    episodes_per_object,
-                    disable_euc_to_geo_ratio_check,
-                )
-            )
+            items.append((
+                s,
+                outpath.format(split),
+                deviceId,
+                split,
+                start_poses_per_object,
+                episodes_per_object,
+                disable_euc_to_geo_ratio_check,
+            ))
 
         mp_ctx = multiprocessing.get_context("forkserver")
-        with mp_ctx.Pool(cpu_threads) as pool, tqdm(
-            total=len(scenes), position=0
-        ) as pbar:
+        with (
+            mp_ctx.Pool(cpu_threads) as pool,
+            tqdm(total=len(scenes), position=0) as pbar,
+        ):
             for _ in pool.imap_unordered(make_episodes_for_scene, items):
                 pbar.update()
     else:
         for scene in tqdm(scenes, total=len(scenes), dynamic_ncols=True):
-            make_episodes_for_scene(
-                (
-                    scene,
-                    outpath.format(split),
-                    deviceIds[0],
-                    split,
-                    start_poses_per_object,
-                    episodes_per_object,
-                    disable_euc_to_geo_ratio_check,
-                    disable_wordnet_mapping,
-                )
-            )
+            make_episodes_for_scene((
+                scene,
+                outpath.format(split),
+                deviceIds[0],
+                split,
+                start_poses_per_object,
+                episodes_per_object,
+                disable_euc_to_geo_ratio_check,
+                disable_wordnet_mapping,
+            ))
 
 
 if __name__ == "__main__":

@@ -376,13 +376,11 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             batch = self.buffers[env_id : env_id + 1, :n_steps]
         dims = batch["masks"].shape[:2]
         batch.map_in_place(lambda v: v.flatten(0, 1))
-        batch["rnn_build_seq_info"] = TensorDict(
-            {
-                "dims": torch.from_numpy(np.asarray(dims)),
-                "is_first": torch.tensor(True),
-                "old_context_length": torch.tensor(n_steps),
-            }
-        )
+        batch["rnn_build_seq_info"] = TensorDict({
+            "dims": torch.from_numpy(np.asarray(dims)),
+            "is_first": torch.tensor(True),
+            "old_context_length": torch.tensor(n_steps),
+        })
         return batch
 
     def update_context_data(
@@ -447,20 +445,16 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
                     batch[k] = batch[k][:, self.old_context_length :]
 
             batch.map_in_place(lambda v: v.flatten(0, 1))
-            batch["rnn_build_seq_info"] = TensorDict(
-                {
-                    "dims": torch.from_numpy(
-                        np.asarray(
-                            [
-                                min(inds + batch_size, num_environments) - inds,
-                                self.current_rollout_step_idx,
-                            ]
-                        )
-                    ),
-                    "is_first": torch.tensor(self.is_first_update),
-                    "old_context_length": torch.tensor(self.old_context_length),
-                }
-            )
+            batch["rnn_build_seq_info"] = TensorDict({
+                "dims": torch.from_numpy(
+                    np.asarray([
+                        min(inds + batch_size, num_environments) - inds,
+                        self.current_rollout_step_idx,
+                    ])
+                ),
+                "is_first": torch.tensor(self.is_first_update),
+                "old_context_length": torch.tensor(self.old_context_length),
+            })
 
             yield batch.to_tree()
 

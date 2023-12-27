@@ -80,21 +80,17 @@ class TransformerTrainer(PPOTrainer):
             )
 
         if self.config.habitat_baselines.rl.ddppo.pretrained:
-            self.actor_critic.load_state_dict(
-                {  # type: ignore
-                    k[len("actor_critic.") :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                }
-            )
+            self.actor_critic.load_state_dict({  # type: ignore
+                k[len("actor_critic.") :]: v
+                for k, v in pretrained_state["state_dict"].items()
+            })
         elif self.config.habitat_baselines.rl.ddppo.pretrained_encoder:
             prefix = "actor_critic.net.visual_encoder."
-            self.actor_critic.net.visual_encoder.load_state_dict(
-                {
-                    k[len(prefix) :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                    if k.startswith(prefix)
-                }
-            )
+            self.actor_critic.net.visual_encoder.load_state_dict({
+                k[len(prefix) :]: v
+                for k, v in pretrained_state["state_dict"].items()
+                if k.startswith(prefix)
+            })
 
         if not self.config.habitat_baselines.rl.ddppo.train_encoder:
             self._static_encoder = True
@@ -119,17 +115,15 @@ class TransformerTrainer(PPOTrainer):
         discrete_actions = self.rollouts.buffers["actions"].dtype == torch.long
         self.rollouts.buffers["observations"][0]
 
-        obs_space = spaces.Dict(
-            {
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
-                    low=np.finfo(np.float32).min,
-                    high=np.finfo(np.float32).max,
-                    shape=self._encoder.output_shape,
-                    dtype=np.float32,
-                ),
-                **self.obs_space.spaces,
-            }
-        )
+        obs_space = spaces.Dict({
+            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
+                low=np.finfo(np.float32).min,
+                high=np.finfo(np.float32).max,
+                shape=self._encoder.output_shape,
+                dtype=np.float32,
+            ),
+            **self.obs_space.spaces,
+        })
 
         self.rollouts = MinimalTransformerRolloutStorage(
             ppo_cfg.num_steps,

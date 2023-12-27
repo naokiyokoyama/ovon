@@ -104,13 +104,11 @@ class TransformerWrapper(nn.Module):
         if force_blind_policy:
             use_obs_space = spaces.Dict({})
         else:
-            use_obs_space = spaces.Dict(
-                {
-                    k: observation_space.spaces[k]
-                    for k in fuse_keys
-                    if len(observation_space.spaces[k].shape) == 3
-                }
-            )
+            use_obs_space = spaces.Dict({
+                k: observation_space.spaces[k]
+                for k in fuse_keys
+                if len(observation_space.spaces[k].shape) == 3
+            })
         resnet_baseplanes = 32
         normalize_visual_inputs = False
         backbone = "resnet18"

@@ -42,14 +42,12 @@ class ResNetCLIPEncoder(nn.Module):
                 ]
             else:
                 preprocess_transforms = []
-            preprocess_transforms.extend(
-                [
-                    # already tensor, but want float
-                    T.ConvertImageDtype(torch.float),
-                    # normalize with CLIP mean, std
-                    preprocess.transforms[4],
-                ]
-            )
+            preprocess_transforms.extend([
+                # already tensor, but want float
+                T.ConvertImageDtype(torch.float),
+                # normalize with CLIP mean, std
+                preprocess.transforms[4],
+            ])
             self.preprocess = T.Compose(preprocess_transforms)
             # expected output: H x W x C (np.float32)
 

@@ -30,6 +30,7 @@ class OVONObjectViewLocation(ObjectViewLocation):
     Args:
         raidus: radius of the circle
     """
+
     radius: Optional[float] = None
 
 
@@ -39,6 +40,7 @@ class OVONEpisode(ObjectGoalNavEpisode):
 
     :param children_object_categories: Category of the object
     """
+
     children_object_categories: Optional[List[str]] = []
 
     @property
@@ -53,6 +55,7 @@ class OVONDatasetV1(PointNavDatasetV1):
     Class inherited from PointNavDataset that loads Open-Vocab
     Object Navigation dataset.
     """
+
     episodes: List[OVONEpisode] = []  # type: ignore
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
     goals_by_category: Dict[str, Sequence[ObjectGoal]]

@@ -19,17 +19,15 @@ class PPONo2DTrainer(PPOTrainer):
         discrete_actions = self.rollouts.buffers["actions"].dtype == torch.long
         batch = self.rollouts.buffers["observations"][0]
 
-        obs_space = spaces.Dict(
-            {
-                PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
-                    low=np.finfo(np.float32).min,
-                    high=np.finfo(np.float32).max,
-                    shape=self._encoder.output_shape,
-                    dtype=np.float32,
-                ),
-                **self.obs_space.spaces,
-            }
-        )
+        obs_space = spaces.Dict({
+            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY: spaces.Box(
+                low=np.finfo(np.float32).min,
+                high=np.finfo(np.float32).max,
+                shape=self._encoder.output_shape,
+                dtype=np.float32,
+            ),
+            **self.obs_space.spaces,
+        })
 
         self.rollouts = RolloutStorageNo2D(
             self.actor_critic.net.visual_encoder,
