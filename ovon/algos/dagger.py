@@ -120,6 +120,9 @@ class DAgger(PPO):
         ]
 
     def update(self, rollouts: RolloutStorage) -> Dict[str, float]:
+        # TODO: this is hacky, need to do this smarter
+        self.actor_critic.net.state_encoder.num_steps = rollouts.num_steps
+
         learner_metrics = collections.defaultdict(list)
 
         def record_min_mean_max(t: torch.Tensor, prefix: str):
@@ -247,41 +250,42 @@ class DAggerPolicyMixin:
         """Same except critic weights are not included."""
         return self.net, self.action_distribution
 
-    def act(
-        self,
-        observations,
-        rnn_hidden_states,
-        prev_actions,
-        masks,
-        deterministic=False,
-    ):
-        """Skips computing values and action_log_probs, which are RL-only."""
-        if not hasattr(self, "action_distribution"):
-            return super().act(observations, rnn_hidden_states, prev_actions, masks)
-
-        features, rnn_hidden_states, _ = self.net(
-            observations, rnn_hidden_states, prev_actions, masks
-        )
-        distribution = self.action_distribution(features)
-
-        with torch.no_grad():
-            if deterministic:
-                if self.action_distribution_type == "categorical":
-                    action = distribution.mode()
-                elif self.action_distribution_type == "gaussian":
-                    action = distribution.mean
-                else:
-                    raise NotImplementedError(
-                        "Distribution type {} is not supported".format(
-                            self.action_distribution_type
-                        )
-                    )
-            else:
-                action = distribution.sample()
-        n = action.shape[0]
-        value = torch.zeros(n, 1, device=action.device)
-        action_log_probs = torch.zeros(n, 1, device=action.device)
-        return value, action, action_log_probs, rnn_hidden_states
+    # COMMENTED OUT TO ALLOW CHEATING FOR IL
+    # def act(
+    #     self,
+    #     observations,
+    #     rnn_hidden_states,
+    #     prev_actions,
+    #     masks,
+    #     deterministic=False,
+    # ):
+    #     """Skips computing values and action_log_probs, which are RL-only."""
+    #     if not hasattr(self, "action_distribution"):
+    #         return super().act(observations, rnn_hidden_states, prev_actions, masks)
+    #
+    #     features, rnn_hidden_states, _ = self.net(
+    #         observations, rnn_hidden_states, prev_actions, masks
+    #     )
+    #     distribution = self.action_distribution(features)
+    #
+    #     with torch.no_grad():
+    #         if deterministic:
+    #             if self.action_distribution_type == "categorical":
+    #                 action = distribution.mode()
+    #             elif self.action_distribution_type == "gaussian":
+    #                 action = distribution.mean
+    #             else:
+    #                 raise NotImplementedError(
+    #                     "Distribution type {} is not supported".format(
+    #                         self.action_distribution_type
+    #                     )
+    #                 )
+    #         else:
+    #             action = distribution.sample()
+    #     n = action.shape[0]
+    #     value = torch.zeros(n, 1, device=action.device)
+    #     action_log_probs = torch.zeros(n, 1, device=action.device)
+    #     return value, action, action_log_probs, rnn_hidden_states
 
     def evaluate_actions(
         self,

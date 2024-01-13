@@ -585,7 +585,7 @@ class LlamaRLModel(LlamaRLPreTrainedModel):
                 past_key_values_length=past_key_values_length,
             )
 
-        if attention_mask is not None:
+        if attention_mask is not None and attention_mask.dim() != 3:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
             if not self.inter_episodes_attention:
                 expanded_attn_mask = create_episodes_mask(

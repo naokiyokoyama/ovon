@@ -154,7 +154,37 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             use_residual=use_residual,
             residual_vision=residual_vision,
             unfreeze_xattn=unfreeze_xattn,
+            **kwargs,
         )
+
+    def act(
+        self,
+        observations,
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        deterministic=False,
+    ):
+        import os
+
+        if os.environ.get("OVON_IL_DONT_CHEAT", "0") == "1":
+            return super().act(
+                observations,
+                rnn_hidden_states,
+                prev_actions,
+                masks,
+                deterministic=deterministic,
+            )
+
+        # TODO: Currently just cheating from teacher_label for imitation learning
+        num_envs = observations["rgb"].shape[0]
+        device = rnn_hidden_states.device
+        action_log_probs = torch.zeros(num_envs, 1).to(device)
+        value = torch.zeros(num_envs, 1).to(device)
+
+        action = observations["teacher_label"].to(device).long()
+
+        return value, action, action_log_probs, rnn_hidden_states
 
     def freeze_visual_encoders(self):
         for param in self.net.visual_encoder.parameters():
@@ -369,19 +399,16 @@ class OVONNet(Net):
             rnn_input_size_info["clip_goal"] = clip_embedding_size
 
         # Report the type and sizes of the inputs to the RNN
-        rnn_input_size = sum(rnn_input_size_info.values())
+        self.rnn_input_size = sum(rnn_input_size_info.values())
         print("RNN input size info: ")
         for k, v in rnn_input_size_info.items():
             print(f"  {k}: {v}")
-        total_str = f"  Total RNN input size: {rnn_input_size}"
+        total_str = f"  Total RNN input size: {self.rnn_input_size}"
         print("  " + "-" * (len(total_str) - 2) + "\n" + total_str)
 
-        self.state_encoder = build_rnn_state_encoder(
-            rnn_input_size,
-            self._hidden_size,
-            rnn_type=rnn_type,
-            num_layers=num_recurrent_layers,
-        )
+        self.rnn_type = rnn_type
+        self._num_recurrent_layers = num_recurrent_layers
+        self.state_encoder = self.build_state_encoder()
 
         if self._fusion_type.late_fusion:
             self.late_fusion_fc = nn.Sequential(
@@ -406,6 +433,14 @@ class OVONNet(Net):
     @property
     def perception_embedding_size(self):
         return self._hidden_size
+
+    def build_state_encoder(self):
+        return build_rnn_state_encoder(
+            self.rnn_input_size,
+            self._hidden_size,
+            rnn_type=self.rnn_type,
+            num_layers=self._num_recurrent_layers,
+        )
 
     def forward(
         self,
@@ -455,13 +490,14 @@ class OVONNet(Net):
         start_token = torch.zeros_like(prev_actions)
         # The mask means the previous action will be zero, an extra dummy action
         prev_actions = self.prev_action_embedding(
-            torch.where(masks.view(-1), prev_actions + 1, start_token)
+            torch.where(masks[:, -1:].view(-1), prev_actions + 1, start_token)
         )
 
         x.append(prev_actions)
 
         out = torch.cat(x, dim=1)
-        out, rnn_hidden_states = self.state_encoder(
+
+        out, rnn_hidden_states = self.encode_state(
             out, rnn_hidden_states, masks, rnn_build_seq_info
         )
 
@@ -474,3 +510,12 @@ class OVONNet(Net):
         }
 
         return out, rnn_hidden_states, aux_loss_state
+
+    def encode_state(
+        self,
+        out: torch.Tensor,
+        rnn_hidden_states: torch.Tensor,
+        masks: torch.Tensor,
+        rnn_build_seq_info: Optional[Dict[str, torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.state_encoder(out, rnn_hidden_states, masks, rnn_build_seq_info)

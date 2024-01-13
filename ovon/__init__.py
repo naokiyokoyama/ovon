@@ -1,7 +1,12 @@
 from ovon import config
 from ovon.dataset import ovon_dataset
 from ovon.measurements import collision_penalty, nav, sum_reward
-from ovon.models import clip_policy, objaverse_clip_policy, ovrl_policy
+from ovon.models import (
+    clip_policy,
+    objaverse_clip_policy,
+    ovrl_policy,
+    transformer_policy,
+)
 from ovon.obs_transformers import (
     image_goal_encoder,
     relabel_imagegoal,
