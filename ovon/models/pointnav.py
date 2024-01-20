@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 from gym import spaces
+from habitat import logger
 from habitat.tasks.nav.instance_image_nav_task import InstanceImageGoalSensor
 from habitat.tasks.nav.nav import (
     EpisodicCompassSensor,
@@ -34,6 +35,7 @@ from torchvision.transforms import functional as TF
 
 from ovon.models.transformer_wrappers import MinimalTransformerWrapper
 from ovon.models.visual_encoders import Vc1Wrapper
+from ovon.task.sensors import ClipObjectGoalSensor
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -63,7 +65,10 @@ class PointNavResNetTransformerPolicy(NetPolicy):
         """
         Keyword arguments:
         rnn_type: RNN layer type; one of ["GRU", "LSTM"]
-        backbone: Visual encoder backbone; one of ["resnet18", "resnet50", "resneXt50", "se_resnet50", "se_resneXt50", "se_resneXt101", "resnet50_clip_avgpool", "resnet50_clip_attnpool"]
+        backbone: Visual encoder backbone; one of
+        ["resnet18", "resnet50", "resneXt50", "se_resnet50",
+        "se_resneXt50", "se_resneXt101", "resnet50_clip_avgpool",
+        "resnet50_clip_attnpool"]
         """
         assert backbone in [
             "vc1",
@@ -156,6 +161,10 @@ class PointNavResNetTransformerPolicy(NetPolicy):
     @property
     def num_heads(self):
         return self.net.num_heads
+
+    @property
+    def recurrent_hidden_size(self):
+        return self.net.recurrent_hidden_size
 
     @torch.autocast("cuda")
     def get_value(
@@ -304,7 +313,9 @@ class ResNetEncoder(nn.Module):
                     nn.init.constant_(layer.bias, val=0)
 
     @torch.autocast("cuda")
-    def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:  # type: ignore
+    def forward(
+        self, observations: Dict[str, torch.Tensor]
+    ) -> torch.Tensor:  # type: ignore
         if self.is_blind:
             return None
 
@@ -353,7 +364,8 @@ class ResNetCLIPEncoder(nn.Module):
             if clip is None:
                 raise ImportError(
                     "Need to install CLIP (run `pip install"
-                    " git+https://github.com/openai/CLIP.git@40f5484c1c74edd83cb9cf687c6ab92b28d8b656`)"
+                    " git+https://github.com/openai/CLIP.git"
+                    "@40f5484c1c74edd83cb9cf687c6ab92b28d8b656`)"
                 )
 
             model, preprocess = clip.load("RN50")
@@ -397,7 +409,9 @@ class ResNetCLIPEncoder(nn.Module):
     def is_blind(self):
         return self._n_input_channels == 0
 
-    def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:  # type: ignore
+    def forward(
+        self, observations: Dict[str, torch.Tensor]
+    ) -> torch.Tensor:  # type: ignore
         if self.is_blind:
             return None
 
@@ -471,6 +485,7 @@ class PointNavResNetNet(Net):
             self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
         self._n_prev_action = 32
         rnn_input_size = self._n_prev_action  # test
+        rnn_input_size_info = {}
 
         # Only fuse the 1D state inputs. Other inputs are processed by the
         # visual encoder
@@ -497,6 +512,8 @@ class PointNavResNetNet(Net):
             rnn_input_size += sum(
                 observation_space.spaces[k].shape[0] for k in self._fuse_keys_1d
             )
+            for k in self._fuse_keys_1d:
+                rnn_input_size_info[k] = observation_space.spaces[k].shape[0]
 
         if IntegratedPointGoalGPSAndCompassSensor.cls_uuid in observation_space.spaces:
             n_input_goal = (
@@ -507,6 +524,7 @@ class PointNavResNetNet(Net):
             )
             self.tgt_embeding = nn.Linear(n_input_goal, 32)
             rnn_input_size += 32
+            rnn_input_size_info["igps"] = 32
 
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
@@ -514,11 +532,13 @@ class PointNavResNetNet(Net):
             )
             self.obj_categories_embedding = nn.Embedding(self._n_object_categories, 32)
             rnn_input_size += 32
+            rnn_input_size_info["object_goal"] = 32
 
         if "one_hot_target_sensor" in observation_space.spaces:
             n_input_goal = observation_space.spaces["one_hot_target_sensor"].shape[0]
             self.ohts_embeding = nn.Linear(n_input_goal, 32)
             rnn_input_size += 32
+            rnn_input_size_info["one_hot_target"] = 32
 
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
@@ -526,6 +546,7 @@ class PointNavResNetNet(Net):
             ]
             self.gps_embedding = nn.Linear(input_gps_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["gps"] = 32
 
         if PointGoalSensor.cls_uuid in observation_space.spaces:
             input_pointgoal_dim = observation_space.spaces[
@@ -533,6 +554,7 @@ class PointNavResNetNet(Net):
             ].shape[0]
             self.pointgoal_embedding = nn.Linear(input_pointgoal_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["point_goal"] = 32
 
         if HeadingSensor.cls_uuid in observation_space.spaces:
             input_heading_dim = (
@@ -541,6 +563,7 @@ class PointNavResNetNet(Net):
             assert input_heading_dim == 2, "Expected heading with 2D rotation."
             self.heading_embedding = nn.Linear(input_heading_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["heading"] = 32
 
         if ProximitySensor.cls_uuid in observation_space.spaces:
             input_proximity_dim = observation_space.spaces[
@@ -548,6 +571,7 @@ class PointNavResNetNet(Net):
             ].shape[0]
             self.proximity_embedding = nn.Linear(input_proximity_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["proxi"] = 32
 
         if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
             assert (
@@ -556,32 +580,14 @@ class PointNavResNetNet(Net):
             input_compass_dim = 2  # cos and sin of the angle
             self.compass_embedding = nn.Linear(input_compass_dim, 32)
             rnn_input_size += 32
+            rnn_input_size_info["compass"] = 32
 
-        for uuid in [
-            ImageGoalSensor.cls_uuid,
-            InstanceImageGoalSensor.cls_uuid,
-        ]:
-            if uuid in observation_space.spaces:
-                goal_observation_space = spaces.Dict(
-                    {"rgb": observation_space.spaces[uuid]}
-                )
-                goal_visual_encoder = ResNetEncoder(
-                    goal_observation_space,
-                    baseplanes=resnet_baseplanes,
-                    ngroups=resnet_baseplanes // 2,
-                    make_backbone=getattr(resnet, backbone),
-                    normalize_visual_inputs=normalize_visual_inputs,
-                )
-                setattr(self, f"{uuid}_encoder", goal_visual_encoder)
-
-                goal_visual_fc = nn.Sequential(
-                    nn.Flatten(),
-                    nn.Linear(np.prod(goal_visual_encoder.output_shape), hidden_size),
-                    nn.ReLU(True),
-                )
-                setattr(self, f"{uuid}_fc", goal_visual_fc)
-
-                rnn_input_size += hidden_size
+        if ClipObjectGoalSensor.cls_uuid in observation_space.spaces:
+            clip_embedding_size = observation_space.spaces[
+                ClipObjectGoalSensor.cls_uuid
+            ].shape[-1]
+            rnn_input_size += clip_embedding_size
+            rnn_input_size_info["clip_objgoal"] = clip_embedding_size
 
         self._hidden_size = hidden_size
 
@@ -591,7 +597,7 @@ class PointNavResNetNet(Net):
             use_obs_space = spaces.Dict({
                 k: observation_space.spaces[k]
                 for k in fuse_keys
-                if len(observation_space.spaces[k].shape) == 3
+                if len(observation_space.spaces[k].shape) == 3 and "rgb" in k
             })
 
         if backbone.startswith("vc1"):
@@ -606,6 +612,11 @@ class PointNavResNetNet(Net):
                     nn.Linear(self.visual_encoder.output_shape[0], hidden_size),
                     nn.ReLU(True),
                 )
+                rnn_input_size_info["vc1"] = hidden_size
+                logger.info(
+                    f"Using VC1 model {model_id} as visual encoder -"
+                    f" {self.visual_encoder.output_shape[0]} - {hidden_size}"
+                )
         elif backbone.startswith("resnet50_clip"):
             self.visual_encoder = ResNetCLIPEncoder(
                 observation_space if not force_blind_policy else spaces.Dict({}),
@@ -616,6 +627,7 @@ class PointNavResNetNet(Net):
                     nn.Linear(self.visual_encoder.output_shape[0], hidden_size),
                     nn.ReLU(True),
                 )
+                rnn_input_size_info["resnet50_clip"] = hidden_size
         else:
             self.visual_encoder = ResNetEncoder(
                 use_obs_space,
@@ -631,18 +643,21 @@ class PointNavResNetNet(Net):
                     nn.Linear(np.prod(self.visual_encoder.output_shape), hidden_size),
                     nn.ReLU(True),
                 )
+                rnn_input_size_info[backbone] = hidden_size
+
+        logger.info("RNN input size info: ")
+        for k, v in rnn_input_size_info.items():
+            logger.info(f"  {k}: {v}")
+        total_str = (
+            "  Total RNN input size:"
+            f" {rnn_input_size + (0 if self.is_blind else self._hidden_size)}"
+        )
+        logger.info("  " + "-" * (len(total_str) - 2) + "\n" + total_str)
 
         self.state_encoder = MinimalTransformerWrapper(
             (0 if self.is_blind else self._hidden_size) + rnn_input_size,
             config=transformer_config,
         )
-
-        # self.state_encoder = build_rnn_state_encoder(
-        #     (0 if self.is_blind else self._hidden_size) + rnn_input_size,
-        #     self._hidden_size,
-        #     rnn_type=rnn_type,
-        #     num_layers=num_recurrent_layers,
-        # )
 
         self.train()
 
@@ -696,7 +711,8 @@ class PointNavResNetNet(Net):
         x = []
         aux_loss_state = {}
         if not self.is_blind:
-            # We CANNOT use observations.get() here because self.visual_encoder(observations)
+            # We CANNOT use observations.get()
+            # here because self.visual_encoder(observations)
             # is an expensive operation. Therefore, we need `# noqa: SIM401`
             if (  # noqa: SIM401
                 PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observations
@@ -801,6 +817,10 @@ class PointNavResNetNet(Net):
 
                 goal_visual_fc = getattr(self, f"{uuid}_fc")
                 x.append(goal_visual_fc(goal_visual_output))
+
+        if ClipObjectGoalSensor.cls_uuid in observations:
+            clip_embedding = observations[ClipObjectGoalSensor.cls_uuid].float()
+            x.append(clip_embedding)
 
         if len(masks.shape) == 3:
             act_mask = masks[:, -1]

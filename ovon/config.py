@@ -260,7 +260,7 @@ class CustomPPOConfig(PPOConfig):
     lrsched_eta_min: float = 0
 
     grad_accum_mini_batches: int = 1
-    training_precision: str = "bfloat16"
+    training_precision: str = "float32"
     ignore_old_obs_grad: bool = False
 
 
