@@ -239,6 +239,25 @@ class TransformerTrainer(PPOTrainer):
         self.pth_time += time.time() - t_update_model
         return losses
 
+    def _reset_envs_custom(self):
+        observations = self.envs.reset()
+        batch = batch_obs(observations, device=self.device)
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)  # type: ignore
+
+        if self._static_encoder:
+            # self._encoder = self._agent.actor_critic.visual_encoder
+            assert (
+                self._encoder is not None
+            ), "Visual encoder is not specified for this actor"
+            with inference_mode():
+                batch[PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY] = self._encoder(
+                    batch
+                )
+
+        self.rollouts.insert_first_observations(batch)  # type: ignore
+
+        self.current_episode_reward *= 0
+
     @profiling_wrapper.RangeContext("train")
     def train(self) -> None:
         r"""Main method for training DD/PPO.
@@ -405,6 +424,9 @@ class TransformerTrainer(PPOTrainer):
                 )
 
                 self._training_log(writer, losses, prev_time)
+
+                if self.config.habitat_baselines.reset_envs_after_update:
+                    self._reset_envs_custom()
 
                 # checkpoint model
                 if rank0_only() and self.should_checkpoint():

@@ -38,7 +38,8 @@ def np_dtype_to_torch_dtype(dtype):
 
 def get_action_space_info(ac_space: spaces.Space) -> Tuple[Tuple[int], bool]:
     """
-    :returns: The shape of the action space and if the action space is discrete. If the action space is discrete, the shape will be `(1,)`.
+    :returns: The shape of the action space and if the action space is discrete.
+      If the action space is discrete, the shape will be `(1,)`.
     """
     if is_continuous_action_space(ac_space):
         # Assume NONE of the actions are discrete
@@ -87,7 +88,9 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
 
         self.is_first_update = True
         self.old_context_length = 0
-        self._frozen_visual = freeze_visual_feats
+        self._frozen_visual = (
+            PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observation_space.spaces
+        )
 
         numsteps += self.context_length
 
@@ -269,7 +272,8 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
             self.buffers[:, 0] = self.buffers[:, self.current_rollout_step_idx]
 
         # self._recurrent_hidden_states = torch.zeros(
-        #     *self._recurrent_hidden_states_shape, device=self.device, dtype=self._dtype
+        #     *self._recurrent_hidden_states_shape,
+        #     device=self.device, dtype=self._dtype
         # )
 
         self.current_rollout_step_idxs = [
@@ -420,7 +424,9 @@ class MinimalTransformerRolloutStorage(RolloutStorage):
         if advantages is not None:
             self.buffers["advantages"] = advantages
 
-        # batches = self.buffers[np.random.permutation(num_environments), :self.current_rollout_step_idx]
+        # batches = self.buffers[
+        #     np.random.permutation(num_environments), :self.current_rollout_step_idx
+        # ]
         b_indexes = np.random.permutation(num_environments)
         batch_size = num_environments // num_mini_batch
 
@@ -473,7 +479,8 @@ class TransformerRolloutStorage(RolloutStorage):
             PointNavResNetNet.PRETRAINED_VISUAL_FEATURES_KEY in observation_space.spaces
         )
         if self._frozen_visual:
-            # Remove the head RGB camera because we have the visual information in the visual features
+            # Remove the head RGB camera because we have the visual information
+            # in the visual features
             observation_space = spaces.Dict(
                 {k: v for k, v in observation_space.spaces.items() if k != "head_rgb"}
             )
@@ -571,7 +578,8 @@ class TransformerRolloutStorage(RolloutStorage):
 
     def after_update(self):
         """
-        Copy over information from the end of the current rollout buffer into the rollout buffer start.
+        Copy over information from the end of the current rollout buffer into
+        the rollout buffer start.
         """
         super().after_update()
         # self.hidden_window[:, : self._context_len] = (
@@ -773,8 +781,11 @@ def flatten_trajs(
     # Ensure every sample is accounted for in this data batch.
     num_samples = ret_batch["observations"][ATT_MASK_K].sum()
     len(inds) * max_data_window_size
-    # This assert no longer works, because we might truncate the episode collection based on the `max_total_samples`.
+    # This assert no longer works, because we might truncate the
+    # episode collection based on the `max_total_samples`.
     # assert (
     #     expected_num_samples == num_samples
-    # ), f"Incorrect number of data samples, got {num_samples}, expected {expected_num_samples}, Ep starts {ep_starts_cpu} data window {max_data_window_size}"
+    # ), f"Incorrect number of data samples, got {num_samples},"
+    # " expected {expected_num_samples}, Ep starts {ep_starts_cpu}"
+    # " data window {max_data_window_size}"
     return TensorDict(ret_batch)
