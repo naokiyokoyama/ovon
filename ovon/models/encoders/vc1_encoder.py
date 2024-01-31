@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from habitat_baselines.common.tensor_dict import TensorDict
 from vc_models.models.vit import model_utils
 
 from ovon.obs_transformers.resize import image_resize
@@ -21,8 +22,11 @@ class VC1Encoder(nn.Module):
         if rgb.dtype == torch.uint8:
             rgb = rgb.float() / 255.0
 
-        # The img loaded should be Bx3x250x250
-        rgb = image_resize(rgb, size=(250, 250), channels_last=True)
+        if rgb.shape[1] != 224 and rgb.shape[2] != 224:
+            # The img loaded should be Bx3x250x250
+            rgb = image_resize(rgb, size=(250, 250), channels_last=True)
+
+        assert rgb.shape[1] == 224 and rgb.shape[2] == 224
         # Change the channels to be first
         rgb = rgb.permute(0, 3, 1, 2)
         with torch.inference_mode():
