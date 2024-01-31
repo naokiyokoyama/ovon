@@ -57,7 +57,7 @@ habitat_baselines:
         relabel_teacher_actions:
           teacher_label: "objnav_explorer"
       transformer_config:
-        model_name: "llamarl"
+        model_name: "llama"
         n_layers: 4
         n_heads: 8
         n_hidden: 512
