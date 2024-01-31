@@ -7,6 +7,7 @@ defaults:
     - relabel_teacher_actions
   - /habitat/task/lab_sensors:
     - objnav_explorer
+    - step_id_sensor
   - /habitat/task/measurements:
     - frontier_exploration_map
   - objectnav_stretch_hm3d
@@ -38,9 +39,9 @@ habitat_baselines:
   num_environments: 32
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver_dagger"
-  num_updates: 270000
+  num_updates: 9400
   log_interval: 10
-  num_checkpoints: 400
+  num_checkpoints: 120
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
@@ -59,20 +60,10 @@ habitat_baselines:
         model_name: "llamarl"
         n_layers: 4
         n_heads: 8
-        n_hidden: 256
+        n_hidden: 512
         n_mlp_hidden: 1024
-        kv_size: 32
-        activation: "gelu_new"
-        inter_episodes_attention: False
-        reset_position_index: False
-        add_sequence_idx_embed: False
-        position_embed_type: linear
-        gated_residual: False
-        context_len: 0
-        banded_attention: False
-        orphan_steps_attention: True
-        add_context_loss: False
-        depth_dropout_p: 0.1
+        max_context_length: 100
+        shuffle_pos_id_for_update: True
 
     ppo:
       # ppo params
@@ -84,7 +75,7 @@ habitat_baselines:
       lr: 2.5e-4
       eps: 1e-5
       max_grad_norm: 0.2
-      num_steps: 64
+      num_steps: 100
       use_gae: True
       gamma: 0.99
       tau: 0.95

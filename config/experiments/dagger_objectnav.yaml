@@ -38,9 +38,9 @@ habitat_baselines:
   num_environments: 32
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver_dagger"
-  num_updates: 270000
+  num_updates: 9400
   log_interval: 10
-  num_checkpoints: 400
+  num_checkpoints: 120
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True

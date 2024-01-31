@@ -7,15 +7,15 @@ from gym import spaces
 from habitat.core.registry import registry
 from habitat.core.simulator import RGBSensor, Sensor, SensorTypes, Simulator
 from habitat.core.utils import try_cv2_import
+from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 from habitat.tasks.nav.nav import NavigationEpisode
-
-cv2 = try_cv2_import()
-
 
 from ovon.utils.utils import load_pickle
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
+
+cv2 = try_cv2_import()
 
 
 @registry.register_sensor
@@ -43,6 +43,10 @@ class ClipObjectGoalSensor(Sensor):
         **kwargs: Any,
     ):
         self.cache = load_pickle(config.cache)
+        k = list(self.cache.keys())[0]
+        self._embed_dim = self.cache[k].shape[0]
+        for v in self.cache.values():
+            assert self._embed_dim == v.shape[0] and v.ndim == 1
         super().__init__(config=config)
 
     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
@@ -52,7 +56,9 @@ class ClipObjectGoalSensor(Sensor):
         return SensorTypes.SEMANTIC
 
     def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return spaces.Box(low=-np.inf, high=np.inf, shape=(1024,), dtype=np.float32)
+        return spaces.Box(
+            low=-np.inf, high=np.inf, shape=(self._embed_dim,), dtype=np.float32
+        )
 
     def get_observation(
         self,
@@ -75,8 +81,8 @@ class ClipImageGoalSensor(Sensor):
 
     def __init__(
         self,
-        sim: "HabitatSim",
-        config: "DictConfig",
+        sim: HabitatSim,
+        config: DictConfig,
         *args: Any,
         **kwargs: Any,
     ):
@@ -294,3 +300,39 @@ class CurrentEpisodeUUIDSensor(Sensor):
             int(hashlib.sha1(episode_uniq_id.encode("utf-8")).hexdigest(), 16) % 10**8
         )
         return episode_uuid
+
+
+@registry.register_sensor
+class StepIDSensor(Sensor):
+    cls_uuid: str = "step_id"
+    curr_ep_id: str = ""
+    _elapsed_steps: int = 0
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def _get_sensor_type(self, *args: Any, **kwargs: Any):
+        return SensorTypes.TENSOR
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return spaces.Box(
+            low=np.iinfo(np.int64).min,
+            high=np.iinfo(np.int64).max,
+            shape=(1,),
+            dtype=np.int64,
+        )
+
+    def get_observation(
+        self,
+        *args: Any,
+        observations,
+        episode: NavigationEpisode,
+        **kwargs: Any,
+    ):
+        episode_uniq_id = f"{episode.scene_id} {episode.episode_id}"
+        if self.curr_ep_id != episode_uniq_id:
+            self.curr_ep_id = episode_uniq_id
+            self._elapsed_steps = 0
+        else:
+            self._elapsed_steps += 1
+        return self._elapsed_steps

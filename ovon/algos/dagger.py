@@ -143,13 +143,17 @@ class DAgger(PPO):
                 teacher_actions = batch["observations"][
                     RelabelTeacherActions.TEACHER_LABEL
                 ].type(torch.long)
+                if getattr(self.actor_critic, "is_transformer", False):
+                    rnn_build_seq_info = {"episode_ids": batch["episode_ids"]}
+                else:
+                    rnn_build_seq_info = batch["rnn_build_seq_info"]
                 log_probs = self._evaluate_actions(
                     batch["observations"],
                     batch["recurrent_hidden_states"],
                     batch["prev_actions"],
                     batch["masks"],
                     teacher_actions,
-                    batch["rnn_build_seq_info"],
+                    rnn_build_seq_info=rnn_build_seq_info,
                 )
                 if "inflection" in batch["observations"]:
                     # Wherever inflections_batch is 1, change it to self.inflection
@@ -223,8 +227,8 @@ class DAgger(PPO):
             }
 
     def _evaluate_actions(self, *args, **kwargs):
-        r"""Internal method that calls Policy.evaluate_actions.  This is used instead of calling
-        that directly so that that call can be overrided with inheritance
+        r"""Internal method that calls Policy.evaluate_actions.  This is used instead of
+        calling that directly so that that call can be overrided with inheritance
         """
         return self.actor_critic.evaluate_actions(*args, **kwargs)
 
@@ -242,7 +246,8 @@ class DAggerPolicyMixin:
     net: nn.Module
     action_distribution_type: str
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, teacher_forcing: bool, *args, **kwargs):
+        self.teacher_forcing = teacher_forcing
         super().__init__(*args, **kwargs)
 
     @property
@@ -250,42 +255,59 @@ class DAggerPolicyMixin:
         """Same except critic weights are not included."""
         return self.net, self.action_distribution
 
-    # COMMENTED OUT TO ALLOW CHEATING FOR IL
-    # def act(
-    #     self,
-    #     observations,
-    #     rnn_hidden_states,
-    #     prev_actions,
-    #     masks,
-    #     deterministic=False,
-    # ):
-    #     """Skips computing values and action_log_probs, which are RL-only."""
-    #     if not hasattr(self, "action_distribution"):
-    #         return super().act(observations, rnn_hidden_states, prev_actions, masks)
-    #
-    #     features, rnn_hidden_states, _ = self.net(
-    #         observations, rnn_hidden_states, prev_actions, masks
-    #     )
-    #     distribution = self.action_distribution(features)
-    #
-    #     with torch.no_grad():
-    #         if deterministic:
-    #             if self.action_distribution_type == "categorical":
-    #                 action = distribution.mode()
-    #             elif self.action_distribution_type == "gaussian":
-    #                 action = distribution.mean
-    #             else:
-    #                 raise NotImplementedError(
-    #                     "Distribution type {} is not supported".format(
-    #                         self.action_distribution_type
-    #                     )
-    #                 )
-    #         else:
-    #             action = distribution.sample()
-    #     n = action.shape[0]
-    #     value = torch.zeros(n, 1, device=action.device)
-    #     action_log_probs = torch.zeros(n, 1, device=action.device)
-    #     return value, action, action_log_probs, rnn_hidden_states
+    def act(
+        self,
+        observations,
+        rnn_hidden_states,
+        prev_actions,
+        masks,
+        deterministic=False,
+    ):
+        if not hasattr(self, "action_distribution"):
+            # For the dummy policy class that has no neural net
+            return super().act(  # type: ignore
+                observations, rnn_hidden_states, prev_actions, masks
+            )
+
+        if self.teacher_forcing:
+            return self.cheat(observations, rnn_hidden_states)
+
+        """Skips computing values and action_log_probs, which are RL-only."""
+        features, rnn_hidden_states, _ = self.net(
+            observations, rnn_hidden_states, prev_actions, masks
+        )
+        distribution = self.action_distribution(features)
+
+        with torch.no_grad():
+            if deterministic:
+                if self.action_distribution_type == "categorical":
+                    action = distribution.mode()
+                elif self.action_distribution_type == "gaussian":
+                    action = distribution.mean
+                else:
+                    raise NotImplementedError(
+                        "Distribution type {} is not supported".format(
+                            self.action_distribution_type
+                        )
+                    )
+            else:
+                action = distribution.sample()
+        n = action.shape[0]
+        value = torch.zeros(n, 1, device=action.device)
+        action_log_probs = torch.zeros(n, 1, device=action.device)
+        return value, action, action_log_probs, rnn_hidden_states
+
+    @staticmethod
+    def cheat(observations, rnn_hidden_states):
+        action = observations["teacher_label"].long()
+
+        num_envs = observations["teacher_label"].shape[0]
+        device = observations["teacher_label"].device
+
+        action_log_probs = torch.zeros(num_envs, 1).to(device)
+        value = torch.zeros(num_envs, 1).to(device)
+
+        return value, action, action_log_probs, rnn_hidden_states
 
     def evaluate_actions(
         self,
@@ -328,10 +350,15 @@ class DAggerPolicy(Policy):
         class MixedPolicy(DAggerPolicyMixin, original_cls): pass  # noqa
         # fmt: on
         return MixedPolicy.from_config(
-            config, observation_space, action_space, **kwargs
+            config,
+            observation_space,
+            action_space,
+            teacher_forcing=config.habitat_baselines.rl.policy.teacher_forcing,
+            **kwargs,
         )
 
 
 @dataclass
 class DAggerPolicyConfig(PolicyConfig):
     original_name: str = ""
+    teacher_forcing: bool = False

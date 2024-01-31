@@ -1,73 +1,58 @@
-from typing import Tuple
+from typing import List, Tuple
 
 import torch
 import torch.nn as nn
 import transformers
 from habitat import logger
-
-from ovon.models.llamarl.configuration_llamarl import LlamaRLConfig
-from ovon.models.llamarl.modeling_llamarl import LlamaRLModel
+from transformers import LlamaConfig, LlamaModel
 
 
 class TransformerEncoder(nn.Module):
     def __init__(self, input_size: int, config):
         super().__init__()
         self.model_name = config.model_name
-        self.inter_episodes_attention = config.inter_episodes_attention
-        self.reset_position_index = config.reset_position_index
-        self.add_sequence_idx_embed = config.add_sequence_idx_embed
         self.n_layers = config.n_layers
-        self.n_embed = config.n_hidden
+        self.n_heads = config.n_heads
+        self.n_hidden = config.n_hidden
         self.n_mlp_hidden = config.n_mlp_hidden
-        self.n_head = config.n_heads
-        self.activation = config.activation
-        self.position_embed_type = config.position_embed_type
-        self.depth_dropout_p = config.depth_dropout_p
-        self.gated_residual = config.gated_residual
-
-        self.context_len = config.context_len
-        self.banded_attention = config.banded_attention
-        self.orphan_steps_attention = config.orphan_steps_attention
-        self.add_context_loss = config.add_context_loss
+        self.max_context_length = config.max_context_length
         self.max_position_embeddings = config.max_position_embeddings
-        self.feats_proj = nn.Linear(input_size, self.n_embed)
-        self.feats_out = nn.Linear(self.n_embed, self.n_embed)
+        self.shuffle_pos_id_for_update = config.shuffle_pos_id_for_update
+
+        self.feats_proj = nn.Linear(input_size, self.n_hidden)
 
         if self.model_name == "gpt":
             self.hf_config = transformers.GPT2Config(
                 vocab_size=0,
-                n_embd=self.n_embed,
+                n_embd=self.n_hidden,
                 n_layer=self.n_layers,
-                n_head=self.n_head,
+                n_head=self.n_heads,
             )
-
             self.model = transformers.GPT2Model(self.hf_config)
             self.model.wte.weight.requires_grad_(False)
-        elif self.model_name == "llamarl":
-            self.hf_config = LlamaRLConfig(
-                hidden_size=self.n_embed,
+        elif self.model_name == "llama":
+            self.hf_config = LlamaConfig(
+                hidden_size=self.n_hidden,
                 intermediate_size=self.n_mlp_hidden,
                 num_hidden_layers=self.n_layers,
-                num_attention_heads=self.n_head,
-                hidden_act=self.activation,
-                inter_episodes_attention=self.inter_episodes_attention,
-                reset_position_index=self.reset_position_index,
-                add_sequence_idx_embed=self.add_sequence_idx_embed,
-                position_embed_type=self.position_embed_type,
-                gated_residual=self.gated_residual,
-                context_len=self.context_len,
-                banded_attention=self.banded_attention,
-                orphan_steps_attention=self.orphan_steps_attention,
-                depth_dropout_p=self.depth_dropout_p,
+                num_attention_heads=self.n_heads,
                 max_position_embeddings=self.max_position_embeddings,
             )
-
-            self.model = LlamaRLModel(self.hf_config)
+            self.model = LlamaModel(self.hf_config)
+            for param in self.model.embed_tokens.parameters():
+                param.requires_grad = False
         else:
             raise ValueError(f"Unrecognized {self.model_name}")
 
+        self._expected_cache_shape = (
+            self.n_layers,
+            2,
+            self.n_heads,
+            self.max_context_length - 1,
+            self.n_hidden // self.n_heads,
+        )
+
         logger.info(f"Done loading {self.model_name} transformer.")
-        self.cache = None
 
     def forward(
         self,
@@ -75,124 +60,101 @@ class TransformerEncoder(nn.Module):
         rnn_hidden_states,
         masks,
         rnn_build_seq_info,
-        full_rnn_state=False,
         **kwargs,
     ):
-        # TODO: THIS IS EXTREMELY HACKY; self.actor_critic.net.state_encoder.num_steps
-        # is set in dagger.py
-        is_update_batch = masks.shape[1] == 1
-        if is_update_batch:
-            num_steps = self.num_steps
+        feats = self.feats_proj(feats)
+        gpu_device = feats.device
 
-            new_shape = (feats.size(0) // num_steps, num_steps) + feats.size()[1:]
-            feats = feats.view(new_shape)
-            feats = self.feats_proj(feats)
-            masks_seq = masks.view(new_shape[0], num_steps, -1).any(dim=-1).float()
-            past_key_values = None
-            position_ids = compute_position_ids(masks_seq)
-            attention_mask = create_episodic_attn_mask(masks_seq)
+        # KV cache, which is only used for online inference, has 6 dimensions
+        # During update phase, the cache is instead provided as an RNN hidden state
+        # with 3 dimensions (N, num_layers, hidden_size). That isn't used.
+        is_update_batch = rnn_hidden_states.ndim != 6
+
+        if is_update_batch:
+            episode_ids = rnn_build_seq_info["episode_ids"].reshape(-1)
+
+            # Split the input sequences into episodes
+            assert feats.shape[0] == episode_ids.shape[0]
+            all_sequences = split_by_id(feats, episode_ids)
+            all_sequences = split_longer_seqs(
+                all_sequences, max_len=self.max_context_length
+            )
+
+            # Pad the shorter sequences with 0s, and create the attention mask to
+            # keep track of the padded elements
+            feats, attention_mask = pad_sequences(all_sequences, device=gpu_device)
+
+            # Create the position_ids tensor
+            batch_size, seq_len = feats.shape[:2]
+            if self.shuffle_pos_id_for_update:
+                position_ids = rand_shifted_position_ids(
+                    self.max_position_embeddings - 1,
+                    batch_size,
+                    seq_len,
+                    device=gpu_device,
+                )
+            else:
+                position_ids = split_by_id(rnn_build_seq_info["step_id"], episode_ids)
+                position_ids = split_longer_seqs(
+                    position_ids, max_len=self.max_context_length
+                )
+                position_ids, _ = pad_sequences(position_ids, device=gpu_device)
+                position_ids = position_ids.squeeze(1)
+
+            # Send the tensors to the GPU
+            feats = feats.to(gpu_device)
+            position_ids = position_ids.to(gpu_device)
+            attention_mask = attention_mask.to(gpu_device)
+
+            output = self.model(
+                inputs_embeds=feats,
+                position_ids=position_ids,
+                attention_mask=attention_mask.to(gpu_device),
+            )
+            feats = extract_hidden_features(output.last_hidden_state, attention_mask)
         else:
             # Assuming that we are doing online inference
-            feats = self.feats_proj(feats)
-            assert feats.ndim == 2
-            feats = feats.unsqueeze(1)  # (batch_size, 1, embed_dim)
-            """
-            masks_seq = masks.float()
+            assert feats.ndim == 2  # (batch_size, embed_dim)
 
-            # Pop the oldest timestep from each sequence in the key-value cache
-            # The cache has the following shape:
-            # (batch_size, num_layers, 2, num_heads, seq_len, head_dim)
-            rnn_hidden_states = rnn_hidden_states[:, :, :, :, 1:, :]
+            if rnn_hidden_states.shape[1:] != self._expected_cache_shape:
+                print(
+                    "WARNING: Received unexpected shape for kv_cache. This is OK if you"
+                    " are doing checkpoint evaluation. Reshaping to expected shape."
+                )
+                rnn_hidden_states = torch.zeros(
+                    rnn_hidden_states.shape[0],
+                    *self._expected_cache_shape,
+                    device=gpu_device,
+                )
 
-            # Extract the cache from the rnn_hidden_states
-            rnn_hidden_states = rnn_hidden_states.to(feats.device)
-            past_key_values = tensor_to_kv_cache(rnn_hidden_states)
-            """
-            if not masks[0, -1]:
-                print("Resetting cache")
-                self.cache = None
+            feats = feats.unsqueeze(1)  # (batch_size, 1, embed_dim), seq_len of 1 step
 
-            past_key_values = self.cache
+            # Create attention mask
+            step_ids = rnn_build_seq_info["step_id"].reshape(-1)
+            attention_mask = create_mask_with_trailing_ones(
+                step_ids + 1, S=self.max_context_length
+            )
 
-            position_ids = None
-            attention_mask = None
+            output = self.model(
+                inputs_embeds=feats,
+                position_ids=step_ids,
+                attention_mask=attention_mask,
+                past_key_values=tensor_to_kv_cache(rnn_hidden_states),
+            )
 
-        output = self.model(
-            inputs_embeds=feats,
-            past_key_values=past_key_values,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-        )
+            cache = truncate_cache(
+                output.past_key_values, max_len=self.max_context_length - 1
+            )
+            rnn_hidden_states = torch.stack(
+                [torch.stack([k, v], dim=1) for k, v in cache], dim=1
+            )
+            feats = output.last_hidden_state[:, -1, :].squeeze(1)
 
-        if is_update_batch:
-            feats = output.last_hidden_state
-            feats = feats.view(-1, feats.size(-1))
-        else:
-            # If we are doing online inference, we only need to return the hidden
-            # states for the current time step
-            # feats = feats.squeeze(1)
-
-            # Extract the key-value cache from the output
-            # rnn_hidden_states = kv_cache_to_tensor(output.past_key_values)
-
-            feats = output.last_hidden_state[:, -1, :]
-            self.cache = output.past_key_values
-
-        return feats, rnn_hidden_states, []
+        return feats, rnn_hidden_states
 
     @property
     def num_recurrent_layers(self):
         return self.n_layers
-
-
-def compute_position_ids(mask: torch.Tensor) -> torch.Tensor:
-    """
-    Compute the position_ids tensor for the given mask.
-
-    Args:
-        mask (torch.Tensor): A mask tensor of shape (batch_size, seq_len) where a
-            value of 0 indicates that the time step is the first time step in a sequence
-            and a value of 1 indicates that the time step is not the first time step in
-            a sequence.
-
-    Returns:
-        torch.Tensor: A position_ids tensor of shape (batch_size, seq_len).
-    """
-    # Calculate cumulative sum along the sequence dimension
-    position_ids_cumulative = mask.cumsum(dim=1)
-
-    # Reset the counter to 0 where the mask is 0 (start of a new sequence)
-    # We use masked_fill_ for an in-place operation
-    position_ids = position_ids_cumulative.masked_fill(mask == 0, 0)
-
-    return position_ids
-
-
-def kv_cache_to_tensor(
-    kv_cache: Tuple[Tuple[torch.Tensor, torch.Tensor], ...]
-) -> torch.Tensor:
-    """
-    Convert a tuple of key-value cache placeholders to a tensor.
-
-    Args:
-        kv_cache (Tuple[Tuple[torch.Tensor, torch.Tensor], ...]): A tuple of tuples
-            containing key-value cache placeholders.
-
-    Returns:
-        torch.Tensor: A tensor representation of the key-value cache.
-    """
-    # Infer dimensions from the input kv_cache
-    num_layers = len(kv_cache)
-    batch_size, num_heads, seq_len, head_dim = kv_cache[0][0].shape
-
-    # Initializing a tensor to store the converted kv_cache
-    kv_tensor = torch.zeros(batch_size, num_layers, 2, num_heads, seq_len, head_dim)
-
-    for layer_idx, (k, v) in enumerate(kv_cache):
-        kv_tensor[:, layer_idx, 0, :, :, :] = k
-        kv_tensor[:, layer_idx, 1, :, :, :] = v
-
-    return kv_tensor
 
 
 def tensor_to_kv_cache(
@@ -219,36 +181,253 @@ def tensor_to_kv_cache(
     return kv_cache
 
 
-def create_episodic_attn_mask(mask: torch.Tensor) -> torch.Tensor:
+def pad_sequences(
+    sequences: List[torch.Tensor],
+    padding_value: float = 0.0,
+    device: torch.device = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Create an episodic attention mask for the given mask.
+    Pads all sequences to be the same length as the longest given sequence, and also
+    returns the corresponding attention_mask to be used by the transformer.
 
     Args:
-        mask (torch.Tensor): A mask tensor of shape (batch_size, seq_len) where a
-            value of 0 indicates that the time step is the first time step in a sequence
-            and a value of 1 indicates that the time step is not the first time step in
-            a sequence.
+        sequences (List[torch.Tensor]): A list of sequences to be padded.
+            padding_value (float): The value to be used for padding.
+        padding_value (float): The value to be used for padding.
+        device (torch.device): The device to be used for the padded sequences and
+
     Returns:
-        torch.Tensor: An episodic attention mask of shape (batch_size, seq_len,
-            seq_len). This tensor is filled with values of either 0.0 or '-inf'. A value
-            of 0.0 at a position (i, j, k) indicates that, within the same episode, the
-            model is allowed to attend from time step j to time step k in batch i. A
-            value of '-inf' blocks attention at those positions. The mask dynamically
-            segments the input sequences into episodes based on the input mask,
-            allowing attention only within these episodes and not across their
-            boundaries.
-
+        Tuple[torch.Tensor, torch.Tensor]: A tuple containing the padded sequences and
+            the corresponding attention mask.
+            - padded_sequences (torch.Tensor): The padded sequences of shape
+                (batch_size, seq_len), where seq_len is the length of the longest given
+                sequence.
+            - attention_mask (torch.Tensor): The attention mask of shape (batch_size,
+                seq_len).
     """
-    batch_size, seq_len = mask.shape
-    attn_mask = torch.full((batch_size, seq_len, seq_len), float("-inf"))
+    max_length = max(seq.size(0) for seq in sequences)
+    padded_sequences = torch.full(
+        (len(sequences), max_length, sequences[0].size(-1)),
+        padding_value,
+        device=device,
+    )
+    attention_mask = torch.zeros(len(sequences), max_length, device=device)
 
-    for i in range(batch_size):
-        episode_start = 0
-        for j in range(seq_len):
-            if mask[i, j] == 0:
-                episode_start = j  # Start of a new episode
-            attn_mask[i, j, episode_start : j + 1] = (
-                0.0  # Allow attention within the episode
-            )
+    for i, seq in enumerate(sequences):
+        end = seq.size(0)
+        padded_sequences[i, :end, :] = seq
+        attention_mask[i, :end] = 1
 
-    return attn_mask
+    return padded_sequences, attention_mask
+
+
+def extract_hidden_features(
+    padded_output_embeds: torch.Tensor, attention_mask: torch.Tensor
+) -> torch.Tensor:
+    """
+    Filters out the hidden features of the padded output embeddings using the attention
+    mask. The attention mask has a value of -inf if the corresponding time step is
+    padded, and 0 otherwise.
+
+    Args:
+        padded_output_embeds (torch.Tensor): The padded output embeddings of shape
+            (batch_size, seq_len, embed_dim).
+        attention_mask (torch.Tensor): The attention mask of shape (batch_size,
+            seq_len).
+    Returns:
+        torch.Tensor: The hidden features of the padded output embeddings of shape
+            (new_batch_size, embed_dim), where new_batch_size is the number of
+            non-padded time steps across all sequences in the batch.
+    """
+    # Flatten the attention mask to identify all non-padded elements
+    non_padded_indices = torch.nonzero(attention_mask.flatten().cpu(), as_tuple=True)[0]
+
+    # Flatten the embeddings tensor and select only the non-padded elements
+    flattened_embeddings = padded_output_embeds.reshape(
+        -1, padded_output_embeds.size(-1)
+    )
+    filtered_features = flattened_embeddings.index_select(
+        0, non_padded_indices.to(flattened_embeddings.device)
+    )
+
+    return filtered_features
+
+
+def rand_shifted_position_ids(
+    max_position_id: int, batch_size: int, seq_len: int, device: torch.device = None
+) -> torch.Tensor:
+    """
+    Given a shape (batch_size, seq_len), returns a new long tensor of shape
+    (batch_size, seq_len). The returned tensor has the following properties:
+    1. Values are uniformly sampled randomly, but all elements must be between 0 and
+    max_position_id.
+    2. Each column must have a value equal to the previous column plus 1.
+
+
+    Args:
+        max_position_id (int): The maximum value that the last index can take.
+        batch_size (int): The batch size.
+        seq_len (int): The sequence length.
+        device (torch.device): The device to be used for the returned tensor.
+
+    Returns:
+        torch.Tensor: A random sequence of position ids of shape (batch_size, seq_len).
+    """
+    # Ensure the sequence can fit within the max_position_id
+    if seq_len - 1 > max_position_id:
+        raise ValueError("Sequence length is too large to fit within max_position_id")
+
+    # Randomly select the start position for each sequence in the batch
+    start_positions = torch.randint(
+        low=0, high=max_position_id - seq_len + 2, size=(batch_size,), device=device
+    )
+
+    # Create a range tensor from 0 to seq_len - 1
+    range_tensor = torch.arange(seq_len, device=device)
+
+    # Add the start position to each column, ensuring it fits within max_position_id
+    shifted_positions = (start_positions.unsqueeze(1) + range_tensor.unsqueeze(0)) % (
+        max_position_id + 1
+    )
+
+    return shifted_positions
+
+
+def truncate_cache(
+    kv_cache: Tuple[Tuple[torch.Tensor, torch.Tensor], ...], max_len: int
+) -> Tuple[Tuple[torch.Tensor, torch.Tensor], ...]:
+    """
+    Remove the oldest entries from each key-value pair in the cache so that the total
+    number of columns does not exceed max_len.
+
+    Args:
+        kv_cache (Tuple[Tuple[torch.Tensor, torch.Tensor], ...]): The key-value cache
+        from each layer and each head of the transformer model.
+        max_len (int): The maximum number of columns to retain in each tensor.
+
+    Returns:
+        Tuple[Tuple[torch.Tensor, torch.Tensor], ...]: Updated key-value cache with
+        the oldest entries removed to ensure the length is at most max_len.
+    """
+    updated_cache = tuple(
+        (
+            (
+                k[:, :, -max_len:, :],
+                v[:, :, -max_len:, :],
+            )  # Keep the last max_len columns
+            for k, v in kv_cache
+        )
+    )
+    return updated_cache
+
+
+def split_longer_seqs(seqs: List[torch.Tensor], max_len: int) -> List[torch.Tensor]:
+    """
+    Splits any long sequences in a list of sequences into multiple sequences of length
+    max_len (except for the last sequence, which may be shorter). Returns a list of
+    sequences and a list of lists of indices so that the original sequences can be
+    recovered.
+
+    Args:
+        seqs (List[torch.Tensor]): A list of sequences, each with a shape (batch_size,
+            seq_len).
+        max_len (int): The maximum length to truncate to.
+
+    Returns:
+        List[torch.Tensor]: A list of split sequences.
+    """
+    """
+    Splits any long sequences in a list of sequences into multiple sequences of length
+    max_len (except for the last sequence, which may be shorter). Returns a list of
+    sequences.
+
+    Args:
+        seqs (List[torch.Tensor]): A list of sequences, each with a shape (seq_len,
+            embed_dim).
+        max_len (int): The maximum length to truncate to.
+
+    Returns:
+        List[torch.Tensor]: A list of split sequences.
+    """
+    split_seqs = []  # List to hold the split sequences
+
+    for seq in seqs:
+        seq_len = seq.shape[0]
+        if seq_len <= max_len:
+            # If the sequence length is within the limit, add it directly
+            split_seqs.append(seq)
+        else:
+            # Split the sequence into chunks of max_len
+            for i in range(0, seq_len, max_len):
+                end_idx = min(i + max_len, seq_len)
+                split_seqs.append(seq[i:end_idx, :])
+
+    return split_seqs
+
+
+def split_by_id(sequence: torch.Tensor, seq_ids: torch.Tensor) -> List[torch.Tensor]:
+    """
+    Splits a sequence into chunks based on the sequence ids.
+
+    Args:
+        sequence (torch.Tensor): The sequence to split. Shape: (batch_size, embed_dim).
+        seq_ids (torch.Tensor): The sequence ids. Shape: (batch_size,).
+
+    Returns:
+        List[torch.Tensor]: A list of split sequences.
+    """
+    unique_ids, counts = torch.unique_consecutive(seq_ids, return_counts=True)
+
+    # Loop through the ordered unique sequence ids
+    split_sequences = []
+    start_idx = 0
+    for uid, c in zip(unique_ids, counts):
+        split_sequences.append(sequence[start_idx : start_idx + c])
+        start_idx += c
+
+    return split_sequences
+
+
+def create_mask_with_trailing_ones(
+    num_trailing_ones: torch.Tensor, S: int
+) -> torch.Tensor:
+    """
+    Creates a 2D mask where each row has a specified number of trailing ones.
+
+    The number of trailing ones in each row of the mask is determined by
+    the corresponding value in the input tensor. The rest of the elements
+    in each row are zeros.
+
+    Args:
+        num_trailing_ones (Tensor): A 1D tensor of shape (N,) containing values in the
+            range [0, S-1]. Each value 'n' in this tensor specifies the number of
+            trailing ones in the corresponding row of the output mask.
+        S (int): The size of the second dimension of the output mask. It also represents
+            the maximum number of trailing ones that can appear in any row of the mask.
+
+    Returns:
+        torch.Tensor: A 2D mask of shape (N, S) where each row contains zeros followed
+            by a number of ones as specified by the corresponding element in the input
+            tensor.
+
+    Example:
+    >>> tensor = torch.tensor([0, 8, 5, 4, 2])
+    >>> create_mask_with_trailing_ones(tensor, 10)
+    tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+            [0., 0., 1., 1., 1., 1., 1., 1., 1., 1.],
+            [0., 0., 0., 0., 0., 1., 1., 1., 1., 1.],
+            [0., 0., 0., 0., 0., 0., 1., 1., 1., 1.],
+            [0., 0., 0., 0., 0., 0., 0., 0., 1., 1.]])
+    """
+    # Create a 2D grid where each row is 0, 1, ..., S-1
+    grid = torch.arange(S, device=num_trailing_ones.device).expand(
+        len(num_trailing_ones), S
+    )
+
+    # Reshape the input tensor for broadcasting
+    reshaped_tensor = num_trailing_ones.view(-1, 1)
+
+    # Create the mask with trailing ones
+    mask = (grid >= (S - reshaped_tensor)).float()
+
+    return mask

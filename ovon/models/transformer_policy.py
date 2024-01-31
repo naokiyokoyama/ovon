@@ -4,6 +4,7 @@ import torch
 from gym import spaces
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.rl.ppo import NetPolicy
+from omegaconf import DictConfig
 
 from ovon.models.clip_policy import OVONNet, PointNavResNetCLIPPolicy
 from ovon.models.transformer_encoder import TransformerEncoder
@@ -22,8 +23,8 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
         num_recurrent_layers: int = 1,
         rnn_type: str = "GRU",
         backbone: str = "clip_avgpool",
-        policy_config: "DictConfig" = None,
-        aux_loss_config: Optional["DictConfig"] = None,
+        policy_config: DictConfig = None,
+        aux_loss_config: Optional[DictConfig] = None,
         depth_ckpt: str = "",
         fusion_type: str = "concat",
         attn_heads: int = 3,
@@ -31,6 +32,7 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
         use_residual: bool = True,
         residual_vision: bool = False,
         unfreeze_xattn: bool = False,
+        rgb_only: bool = True,
         **kwargs,
     ):
         self.unfreeze_xattn = unfreeze_xattn
@@ -58,6 +60,7 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
                 use_residual=use_residual,
                 residual_vision=residual_vision,
                 transformer_config=transformer_config,
+                rgb_only=rgb_only,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -65,7 +68,7 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
         )
 
     @classmethod
-    def from_config(cls, config: "DictConfig", *args, **kwargs):
+    def from_config(cls, config: DictConfig, *args, **kwargs):
         tf_cfg = config.habitat_baselines.rl.policy.transformer_config
         return super().from_config(config, transformer_config=tf_cfg, *args, **kwargs)
 
@@ -78,42 +81,12 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
         return self.net.state_encoder.n_head
 
     @property
-    def context_len(self):
-        return self.net.state_encoder.max_position_embeddings
+    def max_context_length(self):
+        return self.net.state_encoder.max_context_length
 
     @property
     def recurrent_hidden_size(self):
         return self.net.state_encoder.n_embed
-
-    def act(
-        self,
-        observations,
-        rnn_hidden_states,
-        prev_actions,
-        masks,
-        deterministic=False,
-    ):
-        import os
-
-        if os.environ.get("OVON_IL_DONT_CHEAT", "0") == "1":
-            return NetPolicy.act(
-                self,
-                observations,
-                rnn_hidden_states,
-                prev_actions,
-                masks,
-                deterministic=deterministic,
-            )
-
-        # TODO: Currently returning dummy values for imitation learning
-        num_envs = observations["rgb"].shape[0]
-        device = rnn_hidden_states.device
-        action_log_probs = torch.zeros(num_envs, 1).to(device)
-        value = torch.zeros(num_envs, 1).to(device)
-
-        action = observations["teacher_label"].to(device).long()
-
-        return value, action, action_log_probs, rnn_hidden_states
 
 
 class OVONTransformerNet(OVONNet):
@@ -133,30 +106,23 @@ class OVONTransformerNet(OVONNet):
         )
         return state_encoder
 
-    def encode_state(
+    def forward(
         self,
-        out: torch.Tensor,
-        rnn_hidden_states: torch.Tensor,
-        masks: torch.Tensor,
+        observations: Dict[str, torch.Tensor],
+        rnn_hidden_states,
+        prev_actions,
+        masks,
         rnn_build_seq_info: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        full_rnn_state = False
-
-        n_envs = masks.shape[0]
-        seq_len = masks.shape[1]
-
-        rnn_build_seq_info = {
-            "dims": torch.tensor([n_envs, seq_len]),
-            "is_first": torch.tensor(True),
-            "old_context_length": torch.tensor(0),
-        }
-
-        out, rnn_hidden_states, *output = self.state_encoder(
-            out,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+        if "step_id" in observations:
+            if rnn_build_seq_info is None:
+                # Means online inference. Update should already have "episode_ids" key.
+                rnn_build_seq_info = {}
+            rnn_build_seq_info["step_id"] = observations["step_id"]
+        return super().forward(
+            observations,
             rnn_hidden_states,
+            prev_actions,
             masks,
             rnn_build_seq_info,
-            full_rnn_state=full_rnn_state,
         )
-
-        return out, rnn_hidden_states
