@@ -82,7 +82,7 @@ class ClipImageGoalSensor(Sensor):
     def __init__(
         self,
         sim: HabitatSim,
-        config: DictConfig,
+        config: "DictConfig",
         *args: Any,
         **kwargs: Any,
     ):
