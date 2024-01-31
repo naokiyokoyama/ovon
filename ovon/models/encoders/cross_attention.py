@@ -84,12 +84,14 @@ class CrossAttention(nn.Module):
         if self.use_vis_query:
             query = x2_proj
             key = x1_proj
+            value = x1_proj
         else:
             query = x1_proj
             key = x2_proj
+            value = x2_proj
 
         # output: [1, batch_size, embed_dim]
-        output, _ = self.multihead_attn(query=query, key=key, value=x2_proj)
+        output, _ = self.multihead_attn(query=query, key=key, value=value)
 
         if self.use_residual:
             # Add residual connection

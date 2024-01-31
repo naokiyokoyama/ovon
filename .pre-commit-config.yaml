@@ -15,10 +15,10 @@ repos:
     -   id: check-toml
 
 -   repo: https://github.com/psf/black
-    rev: 23.12.1
+    rev: 23.3.0
     hooks:
     -   id: black
-        language_version: python3.9
+        language_version: python3.7
         args: ['--config', 'pyproject.toml']
         verbose: true
 

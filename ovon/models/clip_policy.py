@@ -64,12 +64,13 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         policy_config: "DictConfig" = None,
         aux_loss_config: Optional["DictConfig"] = None,
         depth_ckpt: str = "",
-        fusion_type: str = "concat",
+        fusion_type: str = "cross_attention",
         attn_heads: int = 3,
-        use_vis_query: bool = False,
+        use_vis_query: bool = True,
         use_residual: bool = True,
-        residual_vision: bool = False,
+        residual_vision: bool = True,
         unfreeze_xattn: bool = False,
+        rgb_only: bool = True,
         **kwargs,
     ):
         self.unfreeze_xattn = unfreeze_xattn
@@ -95,6 +96,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 use_vis_query=use_vis_query,
                 use_residual=use_residual,
                 residual_vision=residual_vision,
+                rgb_only=rgb_only,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -129,15 +131,7 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 ((k, v) for k, v in observation_space.items() if k not in ignore_names)
             )
         )
-        depth_ckpt = config.habitat_baselines.rl.policy.get("depth_ckpt", "")
-        fusion_type = config.habitat_baselines.rl.policy.get("fusion_type", "concat")
-        attn_heads = config.habitat_baselines.rl.policy.get("attn_heads", 3)
-        use_vis_query = config.habitat_baselines.rl.policy.get("use_vis_query", False)
-        use_residual = config.habitat_baselines.rl.policy.get("use_residual", True)
-        residual_vision = config.habitat_baselines.rl.policy.get(
-            "residual_vision", False
-        )
-        unfreeze_xattn = config.habitat_baselines.rl.policy.get("unfreeze_xattn", False)
+
         return cls(
             observation_space=filtered_obs,
             action_space=action_space,
@@ -147,13 +141,15 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             backbone=config.habitat_baselines.rl.policy.backbone,
             policy_config=config.habitat_baselines.rl.policy,
             aux_loss_config=config.habitat_baselines.rl.auxiliary_losses,
-            depth_ckpt=depth_ckpt,
-            fusion_type=fusion_type,
-            attn_heads=attn_heads,
-            use_vis_query=use_vis_query,
-            use_residual=use_residual,
-            residual_vision=residual_vision,
-            unfreeze_xattn=unfreeze_xattn,
+            depth_ckpt=config.habitat_baselines.rl.policy.depth_ckpt,
+            fusion_type=config.habitat_baselines.rl.policy.fusion_type,
+            attn_heads=config.habitat_baselines.rl.policy.attn_heads,
+            use_vis_query=config.habitat_baselines.rl.policy.use_vis_query,
+            use_residual=config.habitat_baselines.rl.policy.use_residual,
+            residual_vision=config.habitat_baselines.rl.policy.residual_vision,
+            unfreeze_xattn=config.habitat_baselines.rl.policy.unfreeze_xattn,
+            rgb_only=config.habitat_baselines.rl.policy.rgb_only,
+            **kwargs,
         )
 
     def freeze_visual_encoders(self):
@@ -276,6 +272,7 @@ class OVONNet(Net):
         use_vis_query: bool = False,
         use_residual: bool = True,
         residual_vision: bool = False,
+        rgb_only: bool = True,
         *args,
         **kwargs,
     ):
@@ -287,22 +284,29 @@ class OVONNet(Net):
         self.discrete_actions = discrete_actions
         self._fusion_type = FusionType(fusion_type)
         self._hidden_size = hidden_size
+        self._rgb_only = rgb_only
 
         # Embedding layer for previous action
         self._n_prev_action = 32
-        rnn_input_size_info = {"prev_action": self._n_prev_action}
-        if discrete_actions:
-            self.prev_action_embedding = nn.Embedding(
-                action_space.n + 1, self._n_prev_action
-            )
-        else:
-            num_actions = get_num_actions(action_space)
-            self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
+        rnn_input_size_info = {}
+        if not rgb_only:
+            rnn_input_size_info["prev_action"] = self._n_prev_action
+            if discrete_actions:
+                self.prev_action_embedding = nn.Embedding(
+                    action_space.n + 1, self._n_prev_action
+                )
+            else:
+                num_actions = get_num_actions(action_space)
+                self.prev_action_embedding = nn.Linear(num_actions, self._n_prev_action)
 
         # Visual encoder
         self.visual_encoder = make_encoder(backbone, observation_space)
-        if backbone == "clip_attnpool":
+        if backbone in ["clip_attnpool", "siglip"]:
             self.visual_fc = nn.Identity()
+            if backbone == "clip_attnpool":
+                clip_embedding_size = 1024
+            else:
+                clip_embedding_size = 768
             visual_feats_size = clip_embedding_size
         else:
             if backbone == "resnet":
@@ -319,7 +323,7 @@ class OVONNet(Net):
             visual_feats_size = hidden_size
 
         # Optional Compass embedding layer
-        if EpisodicCompassSensor.cls_uuid in observation_space.spaces:
+        if EpisodicCompassSensor.cls_uuid in observation_space.spaces and not rgb_only:
             assert (
                 observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[0] == 1
             ), "Expected compass with 2D rotation."
@@ -328,7 +332,7 @@ class OVONNet(Net):
             rnn_input_size_info["compass_embedding"] = 32
 
         # Optional GPS embedding layer
-        if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
+        if EpisodicGPSSensor.cls_uuid in observation_space.spaces and not rgb_only:
             input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
                 0
             ]
@@ -339,9 +343,13 @@ class OVONNet(Net):
         if self._fusion_type.concat:
             rnn_input_size_info["visual_feats"] = visual_feats_size
         elif self._fusion_type.xattn:
-            if backbone == "clip_attnpool":
-                embed_dim = 1024
-                attn_heads = 1
+            if backbone in ["clip_attnpool", "siglip"]:
+                if backbone == "clip_attnpool":
+                    embed_dim = 1024
+                else:
+                    embed_dim = 768
+                assert clip_embedding_size == embed_dim
+                assert visual_feats_size == embed_dim
             else:
                 embed_dim = None
             if self._fusion_type.cma:
@@ -369,18 +377,20 @@ class OVONNet(Net):
             rnn_input_size_info["clip_goal"] = clip_embedding_size
 
         # Report the type and sizes of the inputs to the RNN
-        rnn_input_size = sum(rnn_input_size_info.values())
+        self.rnn_input_size = sum(rnn_input_size_info.values())
         print("RNN input size info: ")
         for k, v in rnn_input_size_info.items():
             print(f"  {k}: {v}")
-        total_str = f"  Total RNN input size: {rnn_input_size}"
+        total_str = f"  Total RNN input size: {self.rnn_input_size}"
         print("  " + "-" * (len(total_str) - 2) + "\n" + total_str)
 
-        self.state_encoder = build_rnn_state_encoder(
-            rnn_input_size,
-            self._hidden_size,
-            rnn_type=rnn_type,
-            num_layers=num_recurrent_layers,
+        self.rnn_type = rnn_type
+        self._num_recurrent_layers = num_recurrent_layers
+        self.state_encoder = self.build_state_encoder()
+
+        print(
+            "State encoder parameters: ",
+            sum(p.numel() for p in self.state_encoder.parameters()),
         )
 
         if self._fusion_type.late_fusion:
@@ -406,6 +416,14 @@ class OVONNet(Net):
     @property
     def perception_embedding_size(self):
         return self._hidden_size
+
+    def build_state_encoder(self):
+        return build_rnn_state_encoder(
+            self.rnn_input_size,
+            self._hidden_size,
+            rnn_type=self.rnn_type,
+            num_layers=self._num_recurrent_layers,
+        )
 
     def forward(
         self,
@@ -438,7 +456,7 @@ class OVONNet(Net):
         if self._fusion_type.concat and not self._fusion_type.late_fusion:
             x.append(object_goal)
 
-        if EpisodicCompassSensor.cls_uuid in observations:
+        if EpisodicCompassSensor.cls_uuid in observations and not self._rgb_only:
             compass_observations = torch.stack(
                 [
                     torch.cos(observations[EpisodicCompassSensor.cls_uuid]),
@@ -448,19 +466,21 @@ class OVONNet(Net):
             )
             x.append(self.compass_embedding(compass_observations.squeeze(dim=1)))
 
-        if EpisodicGPSSensor.cls_uuid in observations:
+        if EpisodicGPSSensor.cls_uuid in observations and not self._rgb_only:
             x.append(self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid]))
 
-        prev_actions = prev_actions.squeeze(-1)
-        start_token = torch.zeros_like(prev_actions)
-        # The mask means the previous action will be zero, an extra dummy action
-        prev_actions = self.prev_action_embedding(
-            torch.where(masks.view(-1), prev_actions + 1, start_token)
-        )
+        if not self._rgb_only:
+            prev_actions = prev_actions.squeeze(-1)
+            start_token = torch.zeros_like(prev_actions)
+            # The mask means the previous action will be zero, an extra dummy action
+            prev_actions = self.prev_action_embedding(
+                torch.where(masks[:, -1:].view(-1), prev_actions + 1, start_token)
+            )
 
-        x.append(prev_actions)
+            x.append(prev_actions)
 
         out = torch.cat(x, dim=1)
+
         out, rnn_hidden_states = self.state_encoder(
             out, rnn_hidden_states, masks, rnn_build_seq_info
         )

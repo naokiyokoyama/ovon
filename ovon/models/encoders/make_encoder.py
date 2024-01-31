@@ -4,6 +4,7 @@ from gym import spaces
 
 from ovon.models.encoders.clip_encoder import ResNetCLIPEncoder
 from ovon.models.encoders.dinov2_encoder import DINOV2Encoder
+from ovon.models.encoders.siglip_encoder import SigLIPEncoder
 from ovon.models.encoders.vc1_encoder import VC1Encoder
 
 POSSIBLE_ENCODERS = [
@@ -13,6 +14,7 @@ POSSIBLE_ENCODERS = [
     "vc1",
     "dinov2",
     "resnet",
+    "siglip",
 ]
 
 
@@ -36,6 +38,8 @@ def make_encoder(backbone: str, observation_space: spaces.Dict) -> Any:
         return VC1Encoder()
     elif backbone == "dinov2":
         return DINOV2Encoder()
+    elif backbone == "siglip":
+        return SigLIPEncoder()
     elif backbone == "resnet":
         resnet_baseplanes = 32
         from habitat_baselines.rl.ddppo.policy import resnet

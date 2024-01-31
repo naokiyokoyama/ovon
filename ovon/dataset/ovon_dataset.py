@@ -43,11 +43,6 @@ class OVONEpisode(ObjectGoalNavEpisode):
 
     children_object_categories: Optional[List[str]] = []
 
-    @property
-    def goals_key(self) -> str:
-        r"""The key to retrieve the goals"""
-        return f"{os.path.basename(self.scene_id)}_{self.object_category}"
-
 
 @registry.register_dataset(name="OVON-v1")
 class OVONDatasetV1(PointNavDatasetV1):
@@ -107,7 +102,9 @@ class OVONDatasetV1(PointNavDatasetV1):
 
         for vidx, view in enumerate(g.view_points):
             view_location = OVONObjectViewLocation(**view)  # type: ignore
-            view_location.agent_state = AgentState(**view_location.agent_state)  # type: ignore
+            view_location.agent_state = AgentState(
+                **view_location.agent_state  # type: ignore
+            )
             g.view_points[vidx] = view_location
 
         return g
