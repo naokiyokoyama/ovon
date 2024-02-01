@@ -65,10 +65,8 @@ class TransformerEncoder(nn.Module):
         feats = self.feats_proj(feats)
         gpu_device = feats.device
 
-        # KV cache, which is only used for online inference, has 6 dimensions
-        # During update phase, the cache is instead provided as an RNN hidden state
-        # with 3 dimensions (N, num_layers, hidden_size). That isn't used.
-        is_update_batch = rnn_hidden_states.ndim != 6
+        # Assume update only occurs when episode_ids is injected by dagger.py or ppo.py
+        is_update_batch = "episode_ids" in rnn_build_seq_info
 
         if is_update_batch:
             episode_ids = rnn_build_seq_info["episode_ids"].reshape(-1)
