@@ -4,9 +4,7 @@ defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
     - resize
-    - relabel_teacher_actions
   - /habitat/task/lab_sensors:
-    - objnav_explorer
     - step_id_sensor
   - /habitat/task/measurements:
     - frontier_exploration_map
@@ -20,9 +18,6 @@ habitat:
   task:
     success_reward: 2.5
     slack_reward: -1e-3
-    lab_sensors:
-      objnav_explorer:
-        map_resolution: 128
   dataset:
     split: train_single_story
   simulator:
@@ -38,7 +33,7 @@ habitat_baselines:
   eval_ckpt_path_dir: "data/new_checkpoints"
   num_environments: 32
   checkpoint_folder: "data/new_checkpoints"
-  trainer_name: "ver_dagger"
+  trainer_name: "ver_transformer"
   num_updates: -1
   total_num_steps: 500000000
   log_interval: 10
@@ -54,9 +49,12 @@ habitat_baselines:
 
     policy:
       name: "OVONTransformerPolicy"
-      obs_transforms:
-        relabel_teacher_actions:
-          teacher_label: "objnav_explorer"
+      backbone: "siglip"
+      fusion_type: "cross_attention"
+      attn_heads: 3
+      use_vis_query: True
+      use_residual: True
+      residual_vision: True
       transformer_config:
         model_name: "llama"
         n_layers: 4
@@ -69,7 +67,7 @@ habitat_baselines:
     ppo:
       # ppo params
       clip_param: 0.2
-      ppo_epoch: 1
+      ppo_epoch: 4
       num_mini_batch: 2
       value_loss_coef: 0.5
       entropy_coef: 0.01

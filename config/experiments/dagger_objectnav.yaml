@@ -38,9 +38,10 @@ habitat_baselines:
   num_environments: 32
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver_dagger"
-  num_updates: 9400
+  num_updates: -1
+  total_num_steps: 500000000
   log_interval: 10
-  num_checkpoints: 120
+  num_checkpoints: 90
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
@@ -52,6 +53,12 @@ habitat_baselines:
 
     policy:
       name: "PointNavResNetCLIPPolicy"
+      backbone: "siglip"
+      fusion_type: "cross_attention"
+      attn_heads: 3
+      use_vis_query: True
+      use_residual: True
+      residual_vision: True
       obs_transforms:
         relabel_teacher_actions:
           teacher_label: "objnav_explorer"
@@ -94,6 +101,5 @@ habitat_baselines:
       reset_critic: True
 
       # Model parameters
-      backbone: resnet50_clip_avgpool
       rnn_type: LSTM
       num_recurrent_layers: 4

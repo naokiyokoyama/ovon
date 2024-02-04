@@ -33,6 +33,8 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
         residual_vision: bool = False,
         unfreeze_xattn: bool = False,
         rgb_only: bool = True,
+        use_prev_action: bool = True,
+        use_odom: bool = False,
         **kwargs,
     ):
         self.unfreeze_xattn = unfreeze_xattn
@@ -61,6 +63,8 @@ class OVONTransformerPolicy(PointNavResNetCLIPPolicy):
                 residual_vision=residual_vision,
                 transformer_config=transformer_config,
                 rgb_only=rgb_only,
+                use_prev_action=use_prev_action,
+                use_odom=use_odom,
             ),
             action_space=action_space,
             policy_config=policy_config,

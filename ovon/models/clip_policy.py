@@ -71,6 +71,8 @@ class PointNavResNetCLIPPolicy(NetPolicy):
         residual_vision: bool = True,
         unfreeze_xattn: bool = False,
         rgb_only: bool = True,
+        use_prev_action: bool = True,
+        use_odom: bool = False,
         **kwargs,
     ):
         self.unfreeze_xattn = unfreeze_xattn
@@ -97,6 +99,8 @@ class PointNavResNetCLIPPolicy(NetPolicy):
                 use_residual=use_residual,
                 residual_vision=residual_vision,
                 rgb_only=rgb_only,
+                use_prev_action=use_prev_action,
+                use_odom=use_odom,
             ),
             action_space=action_space,
             policy_config=policy_config,
@@ -149,6 +153,10 @@ class PointNavResNetCLIPPolicy(NetPolicy):
             residual_vision=config.habitat_baselines.rl.policy.residual_vision,
             unfreeze_xattn=config.habitat_baselines.rl.policy.unfreeze_xattn,
             rgb_only=config.habitat_baselines.rl.policy.rgb_only,
+            use_prev_action=config.habitat_baselines.rl.policy.get(
+                "use_prev_action", True
+            ),
+            use_odom=config.habitat_baselines.rl.policy.get("use_odom", False),
             **kwargs,
         )
 
@@ -273,6 +281,8 @@ class OVONNet(Net):
         use_residual: bool = True,
         residual_vision: bool = False,
         rgb_only: bool = True,
+        use_prev_action: bool = True,
+        use_odom: bool = False,
         *args,
         **kwargs,
     ):
@@ -286,10 +296,13 @@ class OVONNet(Net):
         self._hidden_size = hidden_size
         self._rgb_only = rgb_only
 
+        self._use_prev_action = not (rgb_only or not use_prev_action)
+        self._use_odom = not (rgb_only or not use_odom)
+
         # Embedding layer for previous action
         self._n_prev_action = 32
         rnn_input_size_info = {}
-        if not rgb_only:
+        if self._use_prev_action:
             rnn_input_size_info["prev_action"] = self._n_prev_action
             if discrete_actions:
                 self.prev_action_embedding = nn.Embedding(
@@ -323,7 +336,10 @@ class OVONNet(Net):
             visual_feats_size = hidden_size
 
         # Optional Compass embedding layer
-        if EpisodicCompassSensor.cls_uuid in observation_space.spaces and not rgb_only:
+        if (
+            EpisodicCompassSensor.cls_uuid in observation_space.spaces
+            and self._use_odom
+        ):
             assert (
                 observation_space.spaces[EpisodicCompassSensor.cls_uuid].shape[0] == 1
             ), "Expected compass with 2D rotation."
@@ -332,7 +348,7 @@ class OVONNet(Net):
             rnn_input_size_info["compass_embedding"] = 32
 
         # Optional GPS embedding layer
-        if EpisodicGPSSensor.cls_uuid in observation_space.spaces and not rgb_only:
+        if EpisodicGPSSensor.cls_uuid in observation_space.spaces and self._use_odom:
             input_gps_dim = observation_space.spaces[EpisodicGPSSensor.cls_uuid].shape[
                 0
             ]
@@ -456,7 +472,7 @@ class OVONNet(Net):
         if self._fusion_type.concat and not self._fusion_type.late_fusion:
             x.append(object_goal)
 
-        if EpisodicCompassSensor.cls_uuid in observations and not self._rgb_only:
+        if EpisodicCompassSensor.cls_uuid in observations and self._use_odom:
             compass_observations = torch.stack(
                 [
                     torch.cos(observations[EpisodicCompassSensor.cls_uuid]),
@@ -466,10 +482,10 @@ class OVONNet(Net):
             )
             x.append(self.compass_embedding(compass_observations.squeeze(dim=1)))
 
-        if EpisodicGPSSensor.cls_uuid in observations and not self._rgb_only:
+        if EpisodicGPSSensor.cls_uuid in observations and self._use_odom:
             x.append(self.gps_embedding(observations[EpisodicGPSSensor.cls_uuid]))
 
-        if not self._rgb_only:
+        if self._use_prev_action:
             prev_actions = prev_actions.squeeze(-1)
             start_token = torch.zeros_like(prev_actions)
             # The mask means the previous action will be zero, an extra dummy action

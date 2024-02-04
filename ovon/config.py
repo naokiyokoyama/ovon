@@ -184,6 +184,8 @@ class OVONPolicyConfig(PolicyConfig):
     use_residual: bool = True
     residual_vision: bool = True
     rgb_only: bool = True
+    use_prev_action: bool = True
+    use_odom: bool = False
 
     unfreeze_xattn: bool = False
 

@@ -120,9 +120,6 @@ class DAgger(PPO):
         ]
 
     def update(self, rollouts: RolloutStorage) -> Dict[str, float]:
-        # TODO: this is hacky, need to do this smarter
-        self.actor_critic.net.state_encoder.num_steps = rollouts.num_steps
-
         learner_metrics = collections.defaultdict(list)
 
         def record_min_mean_max(t: torch.Tensor, prefix: str):
@@ -143,17 +140,13 @@ class DAgger(PPO):
                 teacher_actions = batch["observations"][
                     RelabelTeacherActions.TEACHER_LABEL
                 ].type(torch.long)
-                if getattr(self.actor_critic, "is_transformer", False):
-                    rnn_build_seq_info = {"episode_ids": batch["episode_ids"]}
-                else:
-                    rnn_build_seq_info = batch["rnn_build_seq_info"]
                 log_probs = self._evaluate_actions(
                     batch["observations"],
                     batch["recurrent_hidden_states"],
                     batch["prev_actions"],
                     batch["masks"],
                     teacher_actions,
-                    rnn_build_seq_info=rnn_build_seq_info,
+                    batch["rnn_build_seq_info"],
                 )
                 if "inflection" in batch["observations"]:
                     # Wherever inflections_batch is 1, change it to self.inflection
@@ -269,7 +262,7 @@ class DAggerPolicyMixin:
                 observations, rnn_hidden_states, prev_actions, masks
             )
 
-        if self.teacher_forcing:
+        if self.teacher_forcing and "teacher_label" in observations:
             return self.cheat(observations, rnn_hidden_states)
 
         """Skips computing values and action_log_probs, which are RL-only."""
