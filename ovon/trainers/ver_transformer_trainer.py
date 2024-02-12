@@ -14,43 +14,55 @@ from habitat.utils import profiling_wrapper
 from habitat_baselines import VERTrainer
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
-    get_active_obs_transforms)
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
 from habitat_baselines.rl.ddppo.algo import DDPPO
-from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, add_signal_handlers,
-                                                  get_distrib_size,
-                                                  get_free_port_distributed,
-                                                  get_main_addr,
-                                                  init_distrib_slurm,
-                                                  is_slurm_batch_job,
-                                                  load_resume_state,
-                                                  rank0_only, requeue_job,
-                                                  save_resume_state)
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    EXIT,
+    add_signal_handlers,
+    get_distrib_size,
+    get_free_port_distributed,
+    get_main_addr,
+    init_distrib_slurm,
+    is_slurm_batch_job,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
 from habitat_baselines.rl.ddppo.policy import PointNavResNetNet  # noqa: F401.
 from habitat_baselines.rl.ppo import PPO
 from habitat_baselines.rl.ver.environment_worker import (
     build_action_plugin_from_policy_action_space,
-    construct_environment_workers)
+    construct_environment_workers,
+)
 from habitat_baselines.rl.ver.preemption_decider import PreemptionDeciderWorker
 from habitat_baselines.rl.ver.report_worker import ReportWorker
 from habitat_baselines.rl.ver.task_enums import ReportWorkerTasks
 from habitat_baselines.rl.ver.timing import Timing
 from habitat_baselines.rl.ver.ver_rollout_storage import VERRolloutStorage
-from habitat_baselines.rl.ver.worker_common import (InferenceWorkerSync,
-                                                    WorkerBase, WorkerQueues)
-from habitat_baselines.utils.common import (batch_obs, cosine_decay,
-                                            generate_video, get_num_actions,
-                                            inference_mode,
-                                            is_continuous_action_space)
+from habitat_baselines.rl.ver.worker_common import (
+    InferenceWorkerSync,
+    WorkerBase,
+    WorkerQueues,
+)
+from habitat_baselines.utils.common import (
+    cosine_decay,
+    get_num_actions,
+    inference_mode,
+    is_continuous_action_space,
+)
 from omegaconf import DictConfig
 from torch.optim.lr_scheduler import LambdaLR
 
-from ovon.algos.ppo import DDPPO, PPO
+from ovon.algos.ppo import DDPPO as DDPPOPirlNav
+from ovon.algos.ppo import PPO as PPOPirlNav
 from ovon.trainers.inference_worker_with_kv import (
-    InferenceWorkerWithKV, InferenceWorkerWithKVProcess)
-from ovon.trainers.ver_rollout_storage_with_kv import \
-    VERRolloutStorageWithKVCache
+    InferenceWorkerWithKV,
+    InferenceWorkerWithKVProcess,
+)
+from ovon.trainers.ver_rollout_storage_with_kv import VERRolloutStorageWithKVCache
 from ovon.utils.lr_scheduler import PIRLNavLRScheduler
 
 try:
@@ -76,6 +88,10 @@ class VERTransformerTrainer(VERTrainer):
         Returns:
             None
         """
+        policy_cfg = self.config.habitat_baselines.rl.policy
+        if not policy_cfg.finetune.enabled:
+            return super()._setup_actor_critic_agent(ppo_cfg)
+
         logger.add_filehandler(self.config.habitat_baselines.log_file)
 
         policy = baseline_registry.get_policy(
@@ -140,9 +156,14 @@ class VERTransformerTrainer(VERTrainer):
             nn.init.orthogonal_(self.actor_critic.critic.fc.weight)
             nn.init.constant_(self.actor_critic.critic.fc.bias, 0)
 
-        self.agent = (DDPPO if self._is_distributed else PPO).from_config(
-            self.actor_critic, ppo_cfg
-        )
+        if hasattr(policy_cfg, "finetune") and policy_cfg.finetune.enabled:
+            self.agent = (
+                DDPPOPirlNav if self._is_distributed else PPOPirlNav
+            ).from_config(self.actor_critic, ppo_cfg)
+        else:
+            self.agent = (DDPPO if self._is_distributed else PPO).from_config(
+                self.actor_critic, ppo_cfg
+            )
 
     def _init_train(self, resume_state):
         r"""Copy of VERTrainer._init_train, but the rollout storage will use the
@@ -470,6 +491,10 @@ class VERTransformerTrainer(VERTrainer):
         Returns:
             None
         """
+        policy_cfg = self.config.habitat_baselines.rl.policy
+        if not policy_cfg.finetune.enabled:
+            return super().train()
+
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = False
         self.num_steps_done = 0
@@ -579,10 +604,12 @@ class VERTransformerTrainer(VERTrainer):
 
                 self.preemption_decider.end_rollout(self.rollouts.num_steps_to_collect)
 
-                self.queues.report.put((
-                    ReportWorkerTasks.num_steps_collected,
-                    int(self.rollouts.num_steps_collected),
-                ))
+                self.queues.report.put(
+                    (
+                        ReportWorkerTasks.num_steps_collected,
+                        int(self.rollouts.num_steps_collected),
+                    )
+                )
 
                 if self.ver_config.overlap_rollouts_and_learn:
                     with self.timer.avg_time("overlap_transfers"):
@@ -602,16 +629,18 @@ class VERTransformerTrainer(VERTrainer):
 
             self.preemption_decider.learner_time(self._learning_time)
 
-            self.queues.report.put_many((
+            self.queues.report.put_many(
                 (
-                    ReportWorkerTasks.learner_timing,
-                    self.timer,
-                ),
-                (
-                    ReportWorkerTasks.learner_update,
-                    learner_metrics,
-                ),
-            ))
+                    (
+                        ReportWorkerTasks.learner_timing,
+                        self.timer,
+                    ),
+                    (
+                        ReportWorkerTasks.learner_update,
+                        learner_metrics,
+                    ),
+                )
+            )
             self.timer = Timing()
 
             if ppo_cfg.use_linear_lr_decay:
@@ -640,15 +669,9 @@ class VERTransformerTrainer(VERTrainer):
             torch.distributed.barrier()
 
     @rank0_only
-    def _training_log(
-        self, writer, losses: Dict[str, float], prev_time: int = 0
-    ):
+    def _training_log(self, writer, losses: Dict[str, float], prev_time: int = 0):
         deltas = {
-            k: (
-                (v[-1] - v[0]).sum().item()
-                if len(v) > 1
-                else v[0].sum().item()
-            )
+            k: (v[-1] - v[0]).sum().item() if len(v) > 1 else v[0].sum().item()
             for k, v in self.window_episode_stats.items()
         }
         deltas["count"] = max(deltas["count"], 1.0)
@@ -681,10 +704,7 @@ class VERTransformerTrainer(VERTrainer):
         writer.add_scalars("learning_rate", lrs, self.num_steps_done)
 
         # log stats
-        if (
-            self.num_updates_done % self.config.habitat_baselines.log_interval
-            == 0
-        ):
+        if self.num_updates_done % self.config.habitat_baselines.log_interval == 0:
             logger.info(
                 "update: {}\tfps: {:.3f}\t".format(
                     self.num_updates_done,
@@ -693,8 +713,7 @@ class VERTransformerTrainer(VERTrainer):
             )
 
             logger.info(
-                "update: {}\tenv-time: {:.3f}s\tpth-time: {:.3f}s\t"
-                "frames: {}".format(
+                "update: {}\tenv-time: {:.3f}s\tpth-time: {:.3f}s\tframes: {}".format(
                     self.num_updates_done,
                     self.env_time,
                     self.pth_time,
@@ -712,4 +731,3 @@ class VERTransformerTrainer(VERTrainer):
                     ),
                 )
             )
-
