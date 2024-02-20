@@ -185,7 +185,7 @@ def generate_description_for_scene(meta_file_path, openai=True):
 
 
 if __name__ == "__main__":
-    openai.api_key = "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"
+    openai.api_key = ""
     # alpaca_model = transformers.AutoModelForCausalLM.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
     # alpaca_tokenizer = transformers.AutoTokenizer.from_pretrained("/srv/cvmlp-lab/flash1/akutumbaka3/hf_alpaca")
     # print("Model has been loaded")

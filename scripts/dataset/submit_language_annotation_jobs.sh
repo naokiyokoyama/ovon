@@ -4,7 +4,7 @@ path=$1
 split=$2
 model=$3
 
-export OPENAI_APIKEY=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
+export OPENAI_APIKEY=
 
 count=0
 prompt_meta_files=`ls ${path}/${split}/content/*_meta.json`
