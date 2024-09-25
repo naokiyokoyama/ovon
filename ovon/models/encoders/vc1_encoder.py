@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
 from habitat_baselines.common.tensor_dict import TensorDict
-from vc_models.models.vit import model_utils
 
 from ovon.obs_transformers.resize import image_resize
 
 
 class VC1Encoder(nn.Module):
     def __init__(self):
+        from vc_models.models.vit import model_utils
+
         super().__init__()
         (
             self.model,
