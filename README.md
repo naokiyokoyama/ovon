@@ -43,6 +43,7 @@ pip install -e habitat-lab
 pip install -e habitat-baselines
 
 pip install ftfy regex tqdm GPUtil trimesh seaborn timm scikit-learn einops transformers
+pip install git+https://github.com/openai/CLIP.git
 ```
 ## :dart: Downloading the datasets
 First, set the following variables during installation (don't need to put in .bashrc):
@@ -66,8 +67,7 @@ python -m habitat_sim.utils.datasets_download \
 ```
 
 The OVON navigation episodes can be found here: https://huggingface.co/datasets/nyokoyama/hm3d_ovon/
-The tar.gz file should be decompressed in `data/datsets/datasets/ovon/`
-During training, the override `habitat.dataset.data_path=` can be used when training or evaluation. Its value should be set to `data/datsets/datasets/ovon/{split}/{split}.json.gz`, where split would be `train` during training, or one of the three `val` splits during evaluation.
+The tar.gz file should be decompressed in `data/datasets/ovon/`, such that the `hm3d` directory is located at `data/datasets/ovon/hm3d/`. 
 
 ## :weight_lifting: Downloading pre-trained weights
 The weights for the DagRL policy can be downloaded from the following link:
