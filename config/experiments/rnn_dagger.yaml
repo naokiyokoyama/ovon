@@ -5,12 +5,12 @@ defaults:
   - /habitat_baselines/rl/policy/obs_transforms:
     - resize
     - relabel_teacher_actions
-  - /habitat/task/lab_sensors:
-    - objnav_explorer
-    - step_id_sensor
   - /habitat/task/measurements:
     - frontier_exploration_map
   - objectnav_stretch_hm3d
+  - override /habitat/task/lab_sensors:
+    - objnav_explorer
+    - clip_objectgoal_sensor
   - _self_
 
 habitat:
@@ -23,12 +23,29 @@ habitat:
     lab_sensors:
       objnav_explorer:
         map_resolution: 128
+        beeline_dist_thresh: 3.5
+        visibility_dist: 3.0
+        area_thresh: 1.5
+        success_distance: 0.25
+        fov: 42
+      clip_objectgoal_sensor:
+        cache: data/text_embeddings/siglip.pkl
+    measurements:
+      success:
+        success_distance: 0.25
+      distance_to_goal:
+        type: OVONDistanceToGoal
   dataset:
-    split: train_single_story
+    type: "OVON-v1"
+    split: train
+    data_path: data/datasets/ovon/hm3d/v1/{split}/{split}.json.gz
   simulator:
+    type: "OVONSim-v0"
     navmesh_settings:
       agent_max_climb: 0.1
       cell_height: 0.05
+    habitat_sim_v0:
+      allow_sliding: True
 
 habitat_baselines:
   torch_gpu_id: 0
@@ -40,9 +57,9 @@ habitat_baselines:
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver_dagger"
   num_updates: -1
-  total_num_steps: 500000000
+  total_num_steps: 150000000
   log_interval: 10
-  num_checkpoints: 90
+  num_checkpoints: 50
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
@@ -53,18 +70,16 @@ habitat_baselines:
   rl:
 
     policy:
-      name: "OVONTransformerPolicy"
+      name: "PointNavResNetCLIPPolicy"
+      backbone: "siglip"
+      fusion_type: "concat"
+      use_vis_query: True
+      use_residual: True
+      residual_vision: True
+      rgb_only: False
       obs_transforms:
         relabel_teacher_actions:
           teacher_label: "objnav_explorer"
-      transformer_config:
-        model_name: "llama"
-        n_layers: 4
-        n_heads: 8
-        n_hidden: 512
-        n_mlp_hidden: 1024
-        max_context_length: 100
-        shuffle_pos_id_for_update: True
 
     ppo:
       # ppo params
@@ -86,7 +101,7 @@ habitat_baselines:
 
       use_normalized_advantage: False
 
-      hidden_size: 512
+      hidden_size: 1024
 
     ddppo:
       sync_frac: 0.6
@@ -104,6 +119,5 @@ habitat_baselines:
       reset_critic: True
 
       # Model parameters
-      backbone: resnet50_clip_avgpool
       rnn_type: LSTM
-      num_recurrent_layers: 2
+      num_recurrent_layers: 4

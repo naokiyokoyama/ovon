@@ -4,11 +4,10 @@ defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
     - resize
-  - /habitat/task/lab_sensors:
-    - step_id_sensor
-  - /habitat/task/measurements:
-    - frontier_exploration_map
   - objectnav_stretch_hm3d
+  - override /habitat/task/lab_sensors:
+    - clip_objectgoal_sensor
+    - step_id_sensor
   - _self_
 
 habitat:
@@ -18,9 +17,20 @@ habitat:
   task:
     success_reward: 2.5
     slack_reward: -1e-3
+    lab_sensors:
+      clip_objectgoal_sensor:
+        cache: data/text_embeddings/siglip.pkl
+    measurements:
+      success:
+        success_distance: 0.25
+      distance_to_goal:
+        type: OVONDistanceToGoal
   dataset:
-    split: train_single_story
+    type: "OVON-v1"
+    split: train
+    data_path: data/datasets/ovon/hm3d/v1/{split}/{split}.json.gz
   simulator:
+    type: "OVONSim-v0"
     navmesh_settings:
       agent_max_climb: 0.1
       cell_height: 0.05
@@ -35,9 +45,9 @@ habitat_baselines:
   checkpoint_folder: "data/new_checkpoints"
   trainer_name: "ver_transformer"
   num_updates: -1
-  total_num_steps: 500000000
+  total_num_steps: 150000000
   log_interval: 10
-  num_checkpoints: 90
+  num_checkpoints: 50
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
@@ -50,11 +60,11 @@ habitat_baselines:
     policy:
       name: "OVONTransformerPolicy"
       backbone: "siglip"
-      fusion_type: "cross_attention"
-      attn_heads: 3
+      fusion_type: "concat"
       use_vis_query: True
       use_residual: True
       residual_vision: True
+      rgb_only: False
       transformer_config:
         model_name: "llama"
         n_layers: 4
@@ -67,7 +77,7 @@ habitat_baselines:
     ppo:
       # ppo params
       clip_param: 0.2
-      ppo_epoch: 4
+      ppo_epoch: 1
       num_mini_batch: 2
       value_loss_coef: 0.5
       entropy_coef: 0.01
@@ -100,8 +110,3 @@ habitat_baselines:
       train_encoder: False
       # Whether or not to reset the critic linear layer
       reset_critic: True
-
-      # Model parameters
-      backbone: resnet50_clip_avgpool
-      rnn_type: LSTM
-      num_recurrent_layers: 2

@@ -4,49 +4,45 @@ defaults:
   - /habitat_baselines: habitat_baselines_rl_config_base
   - /habitat_baselines/rl/policy/obs_transforms:
     - resize
-    - relabel_image_goal
-    - relabel_teacher_actions
-  - imagenav_stretch_hm3d
+  - objectnav_stretch_hm3d
   - override /habitat/task/lab_sensors:
-    - image_goal_rotation_sensor
-    - compass_sensor
-    - gps_sensor
-    - objnav_explorer
+    - clip_objectgoal_sensor
   - override /habitat/task/measurements:
     - distance_to_goal
     - success
     - spl
-    - angle_to_goal
-    - angle_success
-    - imagenav_reward
-    - frontier_exploration_map
+    - soft_spl
+    - collisions
+    - collision_penalty
   - _self_
 
 habitat:
+  environment:
+    iterator_options:
+      max_scene_repeat_steps: 50000
   task:
-    success_reward: 2.5
+    success_reward: 5.0
     slack_reward: -1e-3
-
-    reward_measure: "imagenav_reward"
-    success_measure: "success"
-
+    reward_measure: "collision_penalty"
+    lab_sensors:
+      clip_objectgoal_sensor:
+        cache: data/text_embeddings/siglip.pkl
     measurements:
       success:
-        success_distance: 1.0
-
-    lab_sensors:
-      objnav_explorer:
-        map_resolution: 128
+        success_distance: 0.25
+      distance_to_goal:
+        type: OVONDistanceToGoal
   dataset:
-    split: train_single_story
+    type: "OVON-v1"
+    split: train
+    data_path: data/datasets/ovon/hm3d/v1/{split}/{split}.json.gz
   simulator:
+    type: "OVONSim-v0"
     navmesh_settings:
-      agent_max_climb: 0.20
-      cell_height: 0.20
+      agent_max_climb: 0.1
+      cell_height: 0.05
 
 habitat_baselines:
-  verbose: False
-  trainer_name: "ver_dagger"
   torch_gpu_id: 0
   tensorboard_dir: "tb"
   video_dir: "video_dir"
@@ -54,21 +50,36 @@ habitat_baselines:
   eval_ckpt_path_dir: "data/new_checkpoints"
   num_environments: 32
   checkpoint_folder: "data/new_checkpoints"
+  trainer_name: "ver"
   num_updates: -1
-  total_num_steps: 1e9
-  log_interval: 20
-  num_checkpoints: 400
+  total_num_steps: 150000000
+  log_interval: 10
+  num_checkpoints: 50
   # Force PyTorch to be single threaded as
   # this improves performance considerably
   force_torch_single_threaded: True
+
+  eval:
+    split: "val"
 
   rl:
 
     policy:
       name: "PointNavResNetCLIPPolicy"
-      obs_transforms:
-        relabel_teacher_actions:
-          teacher_label: "objnav_explorer"
+      backbone: "siglip"
+      fusion_type: "concat"
+      use_vis_query: True
+      use_residual: True
+      residual_vision: True
+      rgb_only: False
+
+      finetune:
+        enabled: True
+        lr: 1.5e-5
+        start_actor_warmup_at: 750
+        start_actor_update_at: 1000
+        start_critic_warmup_at: 500
+        start_critic_update_at: 1000
 
     ppo:
       # ppo params
@@ -80,22 +91,18 @@ habitat_baselines:
       lr: 2.5e-4
       eps: 1e-5
       max_grad_norm: 0.2
-      num_steps: 64
+      num_steps: 100
       use_gae: True
       gamma: 0.99
       tau: 0.95
       use_linear_clip_decay: False
-      use_linear_lr_decay: False
+      use_linear_lr_decay: True
       reward_window_size: 50
 
       use_normalized_advantage: False
 
-      hidden_size: 512
+      hidden_size: 1024
 
-      # Use double buffered sampling, typically helps
-      # when environment time is similar or larger than
-      # policy inference time during rollout generation
-      use_double_buffered_sampler: False
     ddppo:
       sync_frac: 0.6
       # The PyTorch distributed backend to use
@@ -106,12 +113,11 @@ habitat_baselines:
       pretrained: False
       # Initialize just the visual encoder backbone with pretrained weights
       pretrained_encoder: False
-      # Whether the visual encoder backbone will be trained.
+      # Whether or not the visual encoder backbone will be trained.
       train_encoder: False
-      # Whether to reset the critic linear layer
+      # Whether or not to reset the critic linear layer
       reset_critic: True
 
       # Model parameters
-      backbone: resnet50_clip_avgattnpool
       rnn_type: LSTM
-      num_recurrent_layers: 2
+      num_recurrent_layers: 4
