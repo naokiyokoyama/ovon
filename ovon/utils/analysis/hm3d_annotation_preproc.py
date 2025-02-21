@@ -1444,9 +1444,12 @@ def save_per_scene_region_data(
             ttl_rooms_count_str = ",".join(
                 [f"{ttl_scene_rooms[k]}" for k in sorted(POSSIBLE_REGION_NAMES)]
             )
-            ttl_rooms_count_weighted_str = ",".join([
-                f"{ttl_scene_rooms_weighted[k]}" for k in sorted(POSSIBLE_REGION_NAMES)
-            ])
+            ttl_rooms_count_weighted_str = ",".join(
+                [
+                    f"{ttl_scene_rooms_weighted[k]}"
+                    for k in sorted(POSSIBLE_REGION_NAMES)
+                ]
+            )
             dest6.write(f"{scenename},{ttl_rooms_count_str},,{ttl_vote_region_str}\n")
             dest7.write(
                 f"{scenename},{ttl_rooms_count_weighted_str},,{ttl_vote_region_str}\n"
@@ -1630,11 +1633,13 @@ def build_str_of_scene_regions(regions_present: dict, sep_per_line: bool):
     if sep_per_line:
         join_char = "\n"
 
-    return f"{join_char}".join([
-        f"{scene}_{region}:{counts['obj_count']}"
-        for scene, region_dict in sorted(regions_present.items())
-        for region, counts in sorted(region_dict.items())
-    ])
+    return f"{join_char}".join(
+        [
+            f"{scene}_{region}:{counts['obj_count']}"
+            for scene, region_dict in sorted(regions_present.items())
+            for region, counts in sorted(region_dict.items())
+        ]
+    )
 
 
 # Build string of passed category tags and counts. These are the neighbors of a
@@ -1649,24 +1654,28 @@ def build_str_of_shared_cats(
         start_char = "\t"
     # return string sorted by count
     if ignore_common:
-        return f"{join_char}".join([
-            f"{start_char}{k}:{v}"
-            for k, v in sorted(
-                neighbor_dict.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-            if k not in IGNORE_TAGS
-        ])
+        return f"{join_char}".join(
+            [
+                f"{start_char}{k}:{v}"
+                for k, v in sorted(
+                    neighbor_dict.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+                if k not in IGNORE_TAGS
+            ]
+        )
     else:
-        return f"{join_char}".join([
-            f"{start_char}{k}:{v}"
-            for k, v in sorted(
-                neighbor_dict.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        ])
+        return f"{join_char}".join(
+            [
+                f"{start_char}{k}:{v}"
+                for k, v in sorted(
+                    neighbor_dict.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+            ]
+        )
 
 
 # Build string of category tags present in specified tags list, ignoring
@@ -1688,11 +1697,13 @@ def build_string_of_region_votes(
     votes_dict: dict, ignore_0_votes: Optional[bool] = False
 ):
     if ignore_0_votes:
-        val_str = ",".join([
-            f"{k}:{votes_dict[k]}"
-            for k in sorted(POSSIBLE_REGION_NAMES)
-            if votes_dict[k] != 0
-        ])
+        val_str = ",".join(
+            [
+                f"{k}:{votes_dict[k]}"
+                for k in sorted(POSSIBLE_REGION_NAMES)
+                if votes_dict[k] != 0
+            ]
+        )
     else:
         val_str = ",".join(
             [f"{k}:{votes_dict[k]}" for k in sorted(POSSIBLE_REGION_NAMES)]

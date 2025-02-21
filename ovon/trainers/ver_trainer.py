@@ -37,17 +37,29 @@ from habitat.utils.render_wrapper import overlay_frame
 from habitat.utils.visualizations.utils import observations_to_image
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
-    apply_obs_transforms_batch, apply_obs_transforms_obs_space,
-    get_active_obs_transforms)
+    apply_obs_transforms_batch,
+    apply_obs_transforms_obs_space,
+    get_active_obs_transforms,
+)
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter
-from habitat_baselines.rl.ddppo.ddp_utils import (EXIT, load_resume_state,
-                                                  rank0_only, requeue_job,
-                                                  save_resume_state)
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    EXIT,
+    load_resume_state,
+    rank0_only,
+    requeue_job,
+    save_resume_state,
+)
 from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
-    PointNavResNetNet, PointNavResNetPolicy)
-from habitat_baselines.utils.common import (batch_obs, generate_video,
-                                            get_num_actions, inference_mode,
-                                            is_continuous_action_space)
+    PointNavResNetNet,
+    PointNavResNetPolicy,
+)
+from habitat_baselines.utils.common import (
+    batch_obs,
+    generate_video,
+    get_num_actions,
+    inference_mode,
+    is_continuous_action_space,
+)
 from omegaconf import OmegaConf
 from torch import nn
 
@@ -100,27 +112,33 @@ class VERPIRLNavTrainer(VERTrainer):
 
         if self.config.habitat_baselines.rl.ddppo.pretrained:
             try:
-                self.actor_critic.load_state_dict({  # type: ignore
-                    k[len("actor_critic.") :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                })
+                self.actor_critic.load_state_dict(
+                    {  # type: ignore
+                        k[len("actor_critic.") :]: v
+                        for k, v in pretrained_state["state_dict"].items()
+                    }
+                )
             except:
                 print("Fail to load pretrained weights. Trying again.")
                 merged_dict = self.actor_critic.state_dict()
-                merged_dict.update({  # type: ignore
-                    k[len("actor_critic.") :]: v
-                    for k, v in pretrained_state["state_dict"].items()
-                    if k[len("actor_critic.") :] in merged_dict
-                })
+                merged_dict.update(
+                    {  # type: ignore
+                        k[len("actor_critic.") :]: v
+                        for k, v in pretrained_state["state_dict"].items()
+                        if k[len("actor_critic.") :] in merged_dict
+                    }
+                )
                 self.actor_critic.load_state_dict(merged_dict)
                 print("Successfully loaded pretrained weights.")
         elif self.config.habitat_baselines.rl.ddppo.pretrained_encoder:
             prefix = "actor_critic.net.visual_encoder."
-            self.actor_critic.net.visual_encoder.load_state_dict({
-                k[len(prefix) :]: v
-                for k, v in pretrained_state["state_dict"].items()
-                if k.startswith(prefix)
-            })
+            self.actor_critic.net.visual_encoder.load_state_dict(
+                {
+                    k[len(prefix) :]: v
+                    for k, v in pretrained_state["state_dict"].items()
+                    if k.startswith(prefix)
+                }
+            )
 
         if not self.config.habitat_baselines.rl.ddppo.train_encoder:
             self._static_encoder = True
@@ -256,10 +274,12 @@ class VERPIRLNavTrainer(VERTrainer):
 
                 self.preemption_decider.end_rollout(self.rollouts.num_steps_to_collect)
 
-                self.queues.report.put((
-                    ReportWorkerTasks.num_steps_collected,
-                    int(self.rollouts.num_steps_collected),
-                ))
+                self.queues.report.put(
+                    (
+                        ReportWorkerTasks.num_steps_collected,
+                        int(self.rollouts.num_steps_collected),
+                    )
+                )
 
                 if self.ver_config.overlap_rollouts_and_learn:
                     with self.timer.avg_time("overlap_transfers"):
@@ -279,16 +299,18 @@ class VERPIRLNavTrainer(VERTrainer):
 
             self.preemption_decider.learner_time(self._learning_time)
 
-            self.queues.report.put_many((
+            self.queues.report.put_many(
                 (
-                    ReportWorkerTasks.learner_timing,
-                    self.timer,
-                ),
-                (
-                    ReportWorkerTasks.learner_update,
-                    learner_metrics,
-                ),
-            ))
+                    (
+                        ReportWorkerTasks.learner_timing,
+                        self.timer,
+                    ),
+                    (
+                        ReportWorkerTasks.learner_update,
+                        learner_metrics,
+                    ),
+                )
+            )
             self.timer = Timing()
 
             if ppo_cfg.use_linear_lr_decay:
@@ -524,10 +546,12 @@ class VERPIRLNavTrainer(VERTrainer):
             n_envs = self.envs.num_envs
             for i in range(n_envs):
                 if (
-                    ep_eval_count[(
-                        next_episodes_info[i].scene_id,
-                        next_episodes_info[i].episode_id,
-                    )]
+                    ep_eval_count[
+                        (
+                            next_episodes_info[i].scene_id,
+                            next_episodes_info[i].episode_id,
+                        )
+                    ]
                     == evals_per_ep
                 ):
                     envs_to_pause.append(i)

@@ -356,13 +356,15 @@ class InstanceObjectGoalGenerator:
             if radius > self.max_viewpoint_radius:
                 continue
 
-            viewpoints.append({
-                "agent_state": {
-                    "position": state.position.tolist(),
-                    "rotation": quat_to_coeffs(state.rotation).tolist(),
-                },
-                "iou": 0.0,
-            })
+            viewpoints.append(
+                {
+                    "agent_state": {
+                        "position": state.position.tolist(),
+                        "rotation": quat_to_coeffs(state.rotation).tolist(),
+                    },
+                    "iou": 0.0,
+                }
+            )
         return viewpoints
 
     def _make_goal(
@@ -466,11 +468,13 @@ class InstanceObjectGoalGenerator:
                 print("Start poses none for: {}".format(relationship_name))
                 continue
 
-            all_goals.append({
-                "object_goals": goals,
-                "start_positions": start_positions,
-                "start_rotations": start_rotations,
-            })
+            all_goals.append(
+                {
+                    "object_goals": goals,
+                    "start_positions": start_positions,
+                    "start_rotations": start_rotations,
+                }
+            )
         sim.close()
         return all_goals
 

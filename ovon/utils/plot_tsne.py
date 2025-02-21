@@ -16,11 +16,13 @@ def plot_tsne(embeddings, output_path):
     tsne = TSNE(n_components=2, verbose=1, perplexity=20, n_iter=500)
     tsne_results = tsne.fit_transform(features)
 
-    df = pd.DataFrame({
-        "tsne-2d-one": tsne_results[:, 0],
-        "tsne-2d-two": tsne_results[:, 1],
-        "labels": categories,
-    })
+    df = pd.DataFrame(
+        {
+            "tsne-2d-one": tsne_results[:, 0],
+            "tsne-2d-two": tsne_results[:, 1],
+            "labels": categories,
+        }
+    )
 
     pallete_size = np.unique(categories).shape[0]
 

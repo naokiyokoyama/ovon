@@ -16,12 +16,14 @@ class DINOV2Encoder(nn.Module):
         self.output_shape = (self.output_size,)
 
     def make_depth_transform(self):
-        return transforms.Compose([
-            transforms.Normalize(
-                mean=(123.675, 116.28, 103.53),
-                std=(58.395, 57.12, 57.375),
-            ),
-        ])
+        return transforms.Compose(
+            [
+                transforms.Normalize(
+                    mean=(123.675, 116.28, 103.53),
+                    std=(58.395, 57.12, 57.375),
+                ),
+            ]
+        )
 
     def forward(self, observations: "TensorDict", *args, **kwargs) -> torch.Tensor:
         # rgb is a tensor of shape (batch_size, height, width, channels)

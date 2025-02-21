@@ -29,20 +29,22 @@ class CLIPImageGoalEncoder(ObservationTransformer):
         clip_model: str = "RN50",
     ):
         super().__init__()
-        dummy_obs_space = spaces.Dict({
-            "rgb": spaces.Box(
-                low=np.finfo(np.float32).min,
-                high=np.finfo(np.float32).max,
-                shape=(224, 224, 3),
-                dtype=np.float32,
-            ),
-            ClipImageGoalSensor.cls_uuid: spaces.Box(
-                low=np.finfo(np.float32).min,
-                high=np.finfo(np.float32).max,
-                shape=(1,),
-                dtype=np.float32,
-            ),
-        })
+        dummy_obs_space = spaces.Dict(
+            {
+                "rgb": spaces.Box(
+                    low=np.finfo(np.float32).min,
+                    high=np.finfo(np.float32).max,
+                    shape=(224, 224, 3),
+                    dtype=np.float32,
+                ),
+                ClipImageGoalSensor.cls_uuid: spaces.Box(
+                    low=np.finfo(np.float32).min,
+                    high=np.finfo(np.float32).max,
+                    shape=(1,),
+                    dtype=np.float32,
+                ),
+            }
+        )
         self._encoder = ResNetCLIPGoalEncoder(
             dummy_obs_space,
             backbone_type="resnet50_avgattnpool",
@@ -97,9 +99,13 @@ class CLIPImageGoalEncoder(ObservationTransformer):
 
         if len(obs_batch) > 0:
             with inference_mode():
-                clip_image_goal = self._encoder({
-                    ClipImageGoalSensor.cls_uuid: torch.stack(obs_batch, dim=0).cuda(),
-                })
+                clip_image_goal = self._encoder(
+                    {
+                        ClipImageGoalSensor.cls_uuid: torch.stack(
+                            obs_batch, dim=0
+                        ).cuda(),
+                    }
+                )
 
             for idx, episode_id in enumerate(episode_ids):
                 self._episode_embeddings[episode_id] = clip_image_goal[idx]

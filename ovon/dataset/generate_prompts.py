@@ -426,14 +426,16 @@ class PromptGenerator:
             points_minz = np.array([(x, y, zmin) for x, y in zip(x_coords, y_coords)])
             points_maxz = np.array([(x, y, zmax) for x, y in zip(x_coords, y_coords)])
 
-            points = np.concatenate((
-                points_minx,
-                points_maxx,
-                points_miny,
-                points_maxy,
-                points_minz,
-                points_maxz,
-            ))
+            points = np.concatenate(
+                (
+                    points_minx,
+                    points_maxx,
+                    points_miny,
+                    points_maxy,
+                    points_minz,
+                    points_maxz,
+                )
+            )
             return points
 
         pts_a = get_surface_points(obj_a)
@@ -488,21 +490,23 @@ class PromptGenerator:
                         for reln in ["above", "below", "near", "on"]:
                             if reln in name:
                                 current_rel = reln
-                        all_relationships.append({
-                            "scene": scene,
-                            "relation": current_rel,
-                            "ref_object": name_a,
-                            "target_object": name_b,
-                            "ref_obj_semantic_id": a.semantic_id,
-                            "target_obj_semantic_id": b.semantic_id,
-                            "distance": min_distance,
-                            "cov": cov,
-                            "area": frac,
-                            "name": name,
-                            "img_ref": img_ref,
-                            "bbA": bbs[0],
-                            "bbB": bbs[1],
-                        })
+                        all_relationships.append(
+                            {
+                                "scene": scene,
+                                "relation": current_rel,
+                                "ref_object": name_a,
+                                "target_object": name_b,
+                                "ref_obj_semantic_id": a.semantic_id,
+                                "target_obj_semantic_id": b.semantic_id,
+                                "distance": min_distance,
+                                "cov": cov,
+                                "area": frac,
+                                "name": name,
+                                "img_ref": img_ref,
+                                "bbA": bbs[0],
+                                "bbB": bbs[1],
+                            }
+                        )
                         self.save_img(img, scene, img_ref)
         sim.close()
         return all_relationships

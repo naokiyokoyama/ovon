@@ -38,9 +38,13 @@ def copy_depth_encoder(depth_ckpt):
     ngroups = 32
     spatial_size = 128
 
-    observation_space = SpaceDict({
-        "depth": spaces.Box(low=0.0, high=1.0, shape=(256, 256, 1), dtype=np.float32),
-    })
+    observation_space = SpaceDict(
+        {
+            "depth": spaces.Box(
+                low=0.0, high=1.0, shape=(256, 256, 1), dtype=np.float32
+            ),
+        }
+    )
     depth_encoder = ResNetEncoder(
         observation_space,
         base_planes,

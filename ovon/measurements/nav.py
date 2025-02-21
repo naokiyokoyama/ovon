@@ -50,11 +50,13 @@ class OVONDistanceToGoal(Measure):
                     # Ignore if there are no valid viewpoints for goal
                     if goal_key not in task._dataset.goals_by_category:
                         continue
-                    self._episode_view_points.extend([
-                        vp.agent_state.position
-                        for goal in task._dataset.goals_by_category[goal_key]
-                        for vp in goal.view_points
-                    ])
+                    self._episode_view_points.extend(
+                        [
+                            vp.agent_state.position
+                            for goal in task._dataset.goals_by_category[goal_key]
+                            for vp in goal.view_points
+                        ]
+                    )
 
         self.update_metric(episode=episode, task=task, *args, **kwargs)
 
