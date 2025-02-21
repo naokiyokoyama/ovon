@@ -9,14 +9,11 @@ import random
 from collections import defaultdict
 from typing import Any, Dict, List, Sequence, Tuple, Union
 
-import GPUtil
+
 import habitat
 import habitat_sim
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import seaborn as sns
-import trimesh
 from habitat_sim import bindings as hsim
 from habitat_sim._ext.habitat_sim_bindings import SemanticObject
 from habitat_sim.agent.agent import AgentConfiguration, AgentState
@@ -38,6 +35,13 @@ from ovon.dataset.semantic_utils import (
 )
 from ovon.utils.utils import load_json
 
+
+try:
+    import pandas as pd
+    import seaborn as sns
+    import trimesh
+except ImportError:
+    pass
 
 class ObjectGoalGenerator:
     ISLAND_RADIUS_LIMIT: float = 1.5
@@ -1021,6 +1025,9 @@ def make_episodes_for_split(
     disable_euc_to_geo_ratio_check: bool = False,
     disable_wordnet_mapping: bool = False,
 ):
+    import GPUtil
+
+
     dataset = habitat.datasets.make_dataset("OVON-v1")
 
     os.makedirs(outpath.format(split), exist_ok=True)

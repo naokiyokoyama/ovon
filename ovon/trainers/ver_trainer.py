@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from ovon.algos.ppo import DDPPO, PPO
 from ovon.utils.lr_scheduler import PIRLNavLRScheduler
+from ovon.utils.visualize.viz import overlay_frame
 
 try:
     torch.backends.cudnn.allow_tf32 = True
@@ -33,8 +34,9 @@ from habitat.config.default import get_agent_config
 from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
 from habitat.tasks.rearrange.rearrange_sensors import GfxReplayMeasure
 from habitat.tasks.rearrange.utils import write_gfx_replay
-from habitat.utils.render_wrapper import overlay_frame
-from habitat.utils.visualizations.utils import observations_to_image
+from habitat.utils.visualizations.utils import (
+    observations_to_image,
+)
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_batch,

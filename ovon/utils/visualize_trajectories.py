@@ -9,7 +9,6 @@ from habitat.config import read_write
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
 from habitat.utils.visualizations.utils import (
-    append_text_to_image,
     images_to_video,
     observations_to_image,
 )
@@ -18,6 +17,7 @@ from numpy import ndarray
 from tqdm import tqdm
 
 from ovon.config import ClipObjectGoalSensorConfig, OVONDistanceToGoalConfig
+from ovon.utils.visualize.viz import append_text_to_image
 
 
 def _face_object(object_position: np.array, point: ndarray):
