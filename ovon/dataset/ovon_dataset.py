@@ -62,15 +62,18 @@ class OVONDatasetV1(PointNavDatasetV1):
 
         goals_by_category = {}
         for i, ep in enumerate(dataset["episodes"]):
+            # Get the category from the first goal
             dataset["episodes"][i]["object_category"] = ep["goals"][0][
                 "object_category"
             ]
             ep = OVONEpisode(**ep)
 
+            # Store unique goals under their key
             goals_key = ep.goals_key
             if goals_key not in goals_by_category:
                 goals_by_category[goals_key] = ep.goals
 
+            # Store a reference to the shared goals
             dataset["episodes"][i]["goals"] = []
 
         dataset["goals_by_category"] = goals_by_category
@@ -99,6 +102,7 @@ class OVONDatasetV1(PointNavDatasetV1):
     @staticmethod
     def __deserialize_goal(serialized_goal: Dict[str, Any]) -> ObjectGoal:
         g = ObjectGoal(**serialized_goal)
+        g.object_id = int(g.object_id.split("_")[-1])
 
         for vidx, view in enumerate(g.view_points):
             view_location = OVONObjectViewLocation(**view)  # type: ignore
@@ -125,6 +129,7 @@ class OVONDatasetV1(PointNavDatasetV1):
 
         for i, episode in enumerate(deserialized["episodes"]):
             episode = OVONEpisode(**episode)
+            episode.goals = self.goals_by_category[episode.goals_key]  # noqa
 
             if scenes_dir is not None:
                 if episode.scene_id.startswith(DEFAULT_SCENE_PATH_PREFIX):
