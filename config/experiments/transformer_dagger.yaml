@@ -11,6 +11,7 @@ defaults:
   - override /habitat/task/lab_sensors:
     - objnav_explorer
     - clip_objectgoal_sensor
+    - step_id_sensor
   - _self_
 
 habitat:
@@ -65,7 +66,7 @@ habitat_baselines:
   force_torch_single_threaded: True
 
   eval:
-    split: "val"
+    split: "val_seen"
 
   rl:
 
