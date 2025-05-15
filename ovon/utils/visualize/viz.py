@@ -2,9 +2,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-from habitat.utils.visualizations.utils import (
-    overlay_text_to_image,
-)
 from habitat_baselines.rl.ddppo.policy import (  # noqa: F401.
     PointNavResNetNet,
     PointNavResNetPolicy,
@@ -80,6 +77,60 @@ def flatten_dict(d: Dict, parent_key: str = "", sep: str = ".") -> Dict:
         else:
             items.append((new_key, v))
     return dict(items)
+
+
+def overlay_text_to_image(image: np.ndarray, text: List[str], font_size: float = 0.5):
+    r"""Overlays lines of text on top of an image.
+
+    First this will render to the left-hand side of the image, once that column is full,
+    it will render to the right hand-side of the image.
+
+    :param image: The image to put text on top.
+    :param text: The list of strings which will be rendered (separated by new lines).
+    :param font_size: Font size.
+    :return: A new image with text overlaid on top.
+    """
+    h, w, c = image.shape
+    font_thickness = 1
+    font = cv2.FONT_HERSHEY_SIMPLEX
+
+    y = 0
+    left_aligned = True
+    for line in text:
+        textsize = cv2.getTextSize(line, font, font_size, font_thickness)[0]
+        y += textsize[1] + 10
+        if y > h:
+            left_aligned = False
+            y = textsize[1] + 10
+
+        if left_aligned:
+            x = 10
+        else:
+            x = w - (textsize[0] + 10)
+
+        cv2.putText(
+            image,
+            line,
+            (x, y),
+            font,
+            font_size,
+            (0, 0, 0),
+            font_thickness * 2,
+            lineType=cv2.LINE_AA,
+        )
+
+        cv2.putText(
+            image,
+            line,
+            (x, y),
+            font,
+            font_size,
+            (255, 255, 255, 255),
+            font_thickness,
+            lineType=cv2.LINE_AA,
+        )
+
+    return np.clip(image, 0, 255)
 
 
 def overlay_frame(
