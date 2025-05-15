@@ -104,35 +104,6 @@ def main():
     with read_write(config):
         edit_config(config, args)
 
-    if args.run_type == "eval" and os.environ.get("OVON_LIMIT_EVAL", "0") == "1":
-        # Move the checkpoint file and the script if the checkpoint wasn't
-        # trained for long enough or if it was trained for too long
-        ckpt_path = config.habitat_baselines.eval_ckpt_path_dir
-        assert osp.isfile(ckpt_path)
-        ckpt_dict = torch.load(ckpt_path, map_location="cpu")
-        step_id = ckpt_dict["extra_state"]["step"]
-        if not 1e8 < step_id < 5e8:
-            # Create an overflow folder if it doesn't exist
-            overflow_dir = osp.join(osp.dirname(ckpt_path), "overflow")
-            try:
-                os.makedirs(overflow_dir, exist_ok=True)
-            except Exception as e:
-                print(f"Could not create overflow directory {overflow_dir}: {e}")
-            assert osp.isdir(overflow_dir)
-            # Move the checkpoint file
-            try:
-                os.rename(
-                    ckpt_path,
-                    osp.join(overflow_dir, osp.basename(ckpt_path)),
-                )
-                print("Moved checkpoint file to overflow directory")
-            except FileNotFoundError:
-                print(
-                    f"Checkpoint file {ckpt_path} not found! Skipping checkpoint move."
-                )
-            # End the script
-            return
-
     execute_exp(config, args.run_type)
 
 
